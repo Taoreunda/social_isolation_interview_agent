@@ -1,0 +1,140 @@
+{
+  "version": "2.0",
+  "description": "단순화된 인터뷰 플로우 - 24개 노드를 5개로 통합",
+  "start_node": "question_handler",
+  "nodes": {
+    "question_handler": {
+      "type": "unified_question",
+      "description": "통합 질문 처리기 - 모든 질문을 하나의 노드에서 관리",
+      "controller_class": "InterviewController",
+      "question_order": [
+        "A1", "A2", "A3",
+        "B1", "B2",
+        "C1", "C2",
+        "D1", "D1_duration",
+        "D2", "D2_duration",
+        "E1", "E2"
+      ],
+      "transitions": {
+        "evaluation_complete": "rule_evaluator",
+        "clarification_needed": "question_handler",
+        "interview_complete": "final_diagnosis"
+      }
+    },
+
+    "rule_evaluator": {
+      "type": "criteria_evaluation",
+      "description": "통합 규칙 평가기 - A, B, C, D 기준 평가",
+      "evaluation_rules": {
+        "A": {
+          "condition": "((A1_positive OR A2_positive) AND A3_positive)",
+          "required_questions": ["A1", "A2", "A3"]
+        },
+        "B": {
+          "condition": "(B1_positive AND B2_positive)",
+          "required_questions": ["B1", "B2"]
+        },
+        "C": {
+          "condition": "(C1_positive AND C2_positive)",
+          "required_questions": ["C1", "C2"]
+        },
+        "D": {
+          "condition": "((D1_positive OR D2_positive) AND D1_duration_positive AND D2_duration_positive)",
+          "required_questions": ["D1", "D1_duration", "D2", "D2_duration"]
+        }
+      },
+      "transitions": {
+        "continue_interview": "question_handler",
+        "check_early_stop": "stop_rule_checker",
+        "all_criteria_evaluated": "final_diagnosis"
+      }
+    },
+
+    "stop_rule_checker": {
+      "type": "early_termination",
+      "description": "조기 종료 체크 - A, B, C 모두 비충족 시 조기 종료",
+      "stop_conditions": {
+        "early_termination": {
+          "condition": "(NOT A AND NOT B AND NOT C)",
+          "message": "조기 종료 조건 충족: A, B, C 기준 모두 비충족"
+        }
+      },
+      "transitions": {
+        "terminate_early": "final_diagnosis",
+        "continue_interview": "question_handler"
+      }
+    },
+
+    "final_diagnosis": {
+      "type": "diagnosis",
+      "description": "최종 진단 - 모든 기준을 종합하여 분류 결정",
+      "diagnosis_rules": {
+        "히키코모리": {
+          "condition": "(A AND B AND C AND D)",
+          "description": "모든 기준 충족: 집에 머무름 + 사회적 상호작용 부재 + 사회적 지지 부재 + 기능 손상"
+        },
+        "사회적 고립": {
+          "condition": "(B AND C AND D)",
+          "description": "B, C, D 기준 충족: 사회적 관계 부재 및 기능 손상"
+        },
+        "일반": {
+          "condition": "DEFAULT",
+          "description": "위 조건에 해당하지 않는 경우"
+        }
+      },
+      "transitions": {
+        "complete": "interview_complete"
+      }
+    },
+
+    "interview_complete": {
+      "type": "completion",
+      "description": "인터뷰 완료 처리 - 결과 저장 및 분석 보고서 생성",
+      "completion_tasks": [
+        "save_interview_results",
+        "generate_analysis_report",
+        "update_session_status"
+      ],
+      "transitions": {}
+    }
+  },
+
+  "global_settings": {
+    "max_clarification_attempts": 3,
+    "session_timeout_minutes": 30,
+    "auto_save_interval": 5,
+    "logging": {
+      "enabled": true,
+      "log_level": "INFO",
+      "include_llm_calls": true,
+      "include_state_changes": true
+    }
+  },
+
+  "prompt_templates": {
+    "introduction": "지금부터, '지난 1달 동안'의 생활에 대하여 몇 가지 질문을 하려고 합니다. 만약 이해가 어렵거나 모호한 부분이 있다면 언제든 질문해주십시오.",
+
+    "clarification_prompt": "죄송합니다. 답변이 명확하지 않아 다시 질문드리겠습니다. {clarification_question}",
+
+    "early_termination_message": "초기 평가 결과, 추가 질문이 필요하지 않은 것으로 판단됩니다.",
+
+    "completion_message": "인터뷰가 완료되었습니다. 결과를 분석하여 보고서를 생성하겠습니다."
+  },
+
+  "error_handling": {
+    "json_parse_error": {
+      "action": "retry_with_simplified_prompt",
+      "max_retries": 2,
+      "fallback": "assume_negative"
+    },
+    "llm_timeout": {
+      "action": "retry_request",
+      "max_retries": 3,
+      "timeout_seconds": 30
+    },
+    "empty_response": {
+      "action": "use_default_negative",
+      "log_warning": true
+    }
+  }
+}

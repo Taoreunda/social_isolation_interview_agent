@@ -1,0 +1,27 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local configuration & cache
+.env
+.python-version
+.pytest_cache/
+.DS_Store
+.vscode/
+
+# Runtime artifacts
+logs/*.json
+data/interviews/
+data/results/*.json
+*.log
+tests/
+AGENT.md
+blueprint.md
+PRD.md

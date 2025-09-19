@@ -1,0 +1,491 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "langgraph_compatible": true,
+    "description": "Social isolation interview flow for LangGraph StateGraph implementation"
+  },
+  "state_schema": {
+    "user_input": "str",
+    "current_node": "str",
+    "interview_results": "dict",
+    "session_id": "str",
+    "clarification_count": "int",
+    "conversation_history": "list"
+  },
+  "start_node": "start_interview",
+  "nodes": {
+    "start_interview": {
+      "type": "static",
+      "message": "지금부터, '지난 1달 동안'의 생활에 대하여 몇 가지 질문을 하려고 합니다. 만약 이해가 어렵거나 모호한 부분이 있다면 언제든 질문해주십시오. 첫 번째 질문입니다.",
+      "next_node": "A1"
+    },
+    "A1": {
+      "type": "question",
+      "question_text": "지난 1달 동안, 하루 중 대부분, 거의 매일 집 혹은 방에서 시간을 보냈습니까?",
+      "llm_chain": {
+        "prompt_key": "A1",
+        "output_parser": "json"
+      },
+      "response_handler": {
+        "type": "evaluate_yes_no",
+        "evaluation_key": "A1"
+      },
+      "next_nodes": {
+        "positive": "A2",
+        "negative": "A2",
+        "clarification_needed": "A1"
+      },
+      "max_clarifications": 3
+    },
+    "A2": {
+      "type": "question",
+      "question_text": "지난 1달 동안, 일주일에 평균적으로 몇 번 외출하였습니까? (분리수거·생필품 구매를 위한 외출은 제외)",
+      "llm_chain": {
+        "prompt_key": "A2",
+        "output_parser": "json"
+      },
+      "response_handler": {
+        "type": "evaluate_number",
+        "evaluation_key": "A2",
+        "criteria": {
+          "type": "less_than",
+          "value": 4
+        }
+      },
+      "next_nodes": {
+        "positive": "A3",
+        "negative": "A3",
+        "clarification_needed": "A2"
+      },
+      "max_clarifications": 3
+    },
+    "A3": {
+      "type": "question",
+      "question_text": "이러한 기간이 얼마나 오래 지속되었습니까? (예: 3개월, 6개월, 1년 등)",
+      "llm_chain": {
+        "prompt_key": "A3",
+        "output_parser": "json"
+      },
+      "response_handler": {
+        "type": "evaluate_duration_months",
+        "evaluation_key": "A3",
+        "criteria": {
+          "type": "greater_than_or_equal_to",
+          "value": 6
+        }
+      },
+      "next_nodes": {
+        "positive": "A_summary",
+        "negative": "A_summary",
+        "clarification_needed": "A3"
+      },
+      "max_clarifications": 3
+    },
+    "A_summary": {
+      "type": "rule_executor",
+      "rule_name": "evaluate_A_overall",
+      "next_node": "B1"
+    },
+    "B1": {
+      "type": "question",
+      "question_text": "지난 1달 동안 직장 또는 사적 영역에서 유의미한 상호작용을 꾸준히 지속한 사람이 몇 명입니까? (동거인·가족 제외, 오직 온라인만의 관계 제외, 0명 가능)",
+      "llm_chain": {
+        "prompt_key": "B1",
+        "output_parser": "json"
+      },
+      "response_handler": {
+        "type": "evaluate_number",
+        "evaluation_key": "B1",
+        "criteria": {
+          "type": "equal_to",
+          "value": 0
+        }
+      },
+      "next_nodes": {
+        "positive": "B2",
+        "negative": "B2",
+        "clarification_needed": "B1"
+      },
+      "max_clarifications": 3
+    },
+    "B2": {
+      "type": "question",
+      "question_text": "이러한 기간이 얼마나 오래 지속되었습니까?",
+      "next_nodes": {
+        "positive": "B_summary",
+        "negative": "B_summary",
+        "clarification_needed": "B2"
+      },
+      "llm_chain": {
+        "prompt_key": "B2",
+        "output_parser": "json"
+      },
+      "max_clarifications": 3
+    },
+    "B_summary": {
+      "type": "rule_executor",
+      "rule_name": "evaluate_B_overall",
+      "next_node": "C1"
+    },
+    "C1": {
+      "type": "question",
+      "question_text": "지난 1달 동안, 필요할 때 의지할 수 있는 사람이 몇 명입니까? (0명 가능, 온라인만/동거인/가족 제외)",
+      "next_nodes": {
+        "positive": "C2",
+        "negative": "C2",
+        "clarification_needed": "C1"
+      },
+      "llm_chain": {
+        "prompt_key": "C1",
+        "output_parser": "json"
+      },
+      "max_clarifications": 3
+    },
+    "C2": {
+      "type": "question",
+      "question_text": "그러한 상태가 얼마나 오래 지속되었습니까?",
+      "next_nodes": {
+        "positive": "C_summary",
+        "negative": "C_summary",
+        "clarification_needed": "C2"
+      },
+      "llm_chain": {
+        "prompt_key": "C2",
+        "output_parser": "json"
+      },
+      "max_clarifications": 3
+    },
+    "C_summary": {
+      "type": "rule_executor",
+      "rule_name": "evaluate_C_overall",
+      "next_node": "check_stop_rule"
+    },
+    "check_stop_rule": {
+      "type": "router",
+      "rule_name": "stop_rule"
+    },
+    "D1": {
+      "type": "question",
+      "question_text": "지난 1달 동안, 고립된 생활로 인해 정서적 고통을 느꼈습니까? (또는 주변 사람이 고통을 느꼈습니까?) 느꼈다면 1~10점은 몇 점입니까?",
+      "next_nodes": {
+        "positive": "D1_duration",
+        "negative": "D2",
+        "clarification_needed": "D1"
+      },
+      "llm_chain": {
+        "prompt_key": "D1",
+        "output_parser": "json"
+      },
+      "max_clarifications": 3
+    },
+    "D1_duration": {
+      "type": "question",
+      "question_text": "그러한 정서적 고통은 얼마나 오래 지속되었습니까?",
+      "next_nodes": {
+        "positive": "D_summary",
+        "negative": "D_summary",
+        "clarification_needed": "D1_duration"
+      },
+      "llm_chain": {
+        "prompt_key": "D1_duration",
+        "output_parser": "json"
+      },
+      "max_clarifications": 3
+    },
+    "D2": {
+      "type": "question",
+      "question_text": "지난 1달 동안, 고립된 생활이 학업/직업/구직/양육/일상 기능(위생·식사 등)에 부정적 영향을 미쳤습니까? 미쳤다면 1~10점은 몇 점입니까?",
+      "next_nodes": {
+        "positive": "D2_duration",
+        "negative": "D_summary",
+        "clarification_needed": "D2"
+      },
+      "llm_chain": {
+        "prompt_key": "D2",
+        "output_parser": "json"
+      },
+      "max_clarifications": 3
+    },
+    "D2_duration": {
+      "type": "question",
+      "question_text": "그러한 기능 손상은 얼마나 오래 지속되었습니까?",
+      "next_nodes": {
+        "positive": "D_summary",
+        "negative": "D_summary",
+        "clarification_needed": "D2_duration"
+      },
+      "llm_chain": {
+        "prompt_key": "D2_duration",
+        "output_parser": "json"
+      },
+      "max_clarifications": 3
+    },
+    "D_summary": {
+      "type": "rule_executor",
+      "rule_name": "evaluate_D_overall",
+      "next_node": "E1"
+    },
+    "E1": {
+      "type": "question",
+      "question_text": "정서적/정신과적 문제로 심리 평가나 상담을 받은 적이 있습니까? (있다면 언제, 무엇 때문이었나요?)",
+      "response_handler": {
+        "type": "record_text"
+      },
+      "next_node": "E2"
+    },
+    "E2": {
+      "type": "question",
+      "question_text": "내외과적 신체 질환으로 진단 또는 치료를 받은 적이 있습니까? (있다면 언제, 무엇 때문이었나요?)",
+      "response_handler": {
+        "type": "record_text"
+      },
+      "next_node": "final_diagnosis"
+    },
+    "final_diagnosis": {
+      "type": "router",
+      "rule_name": "final_diagnosis_rule"
+    },
+    "end_interview_early": {
+      "type": "static",
+      "message": "면담을 종료합니다. 진단 기준에 따르면 사회적 고립 상태에 해당하지 않는 것으로 보입니다.",
+      "next_node": null
+    },
+    "end_as_social_isolation": {
+      "type": "summary",
+      "message": "모든 면담이 종료되었습니다. 진단 결과: 사회적 고립군. 결과를 정리하고 분석합니다.",
+      "next_node": null
+    },
+    "end_as_hikikomori": {
+      "type": "summary",
+      "message": "모든 면담이 종료되었습니다. 진단 결과: 히키코모리. 결과를 정리하고 분석합니다.",
+      "next_node": null
+    },
+    "end_interview_default": {
+      "type": "summary",
+      "message": "모든 면담이 종료되었습니다. 진단 기준에 명확히 부합하지 않습니다. 결과를 정리하고 분석합니다.",
+      "next_node": null
+    }
+  },
+  "rules": {
+    "evaluate_A_overall": {
+      "description": "A1 또는 A2가 positive이고, A3가 positive이면 A_overall은 positive.",
+      "rule_type": "langgraph_compatible",
+      "condition": {
+        "operator": "AND",
+        "clauses": [
+          {
+            "operator": "OR",
+            "clauses": [
+              {
+                "node_result": "A1",
+                "equals": "positive"
+              },
+              {
+                "node_result": "A2",
+                "equals": "positive"
+              }
+            ]
+          },
+          {
+            "node_result": "A3",
+            "equals": "positive"
+          }
+        ]
+      },
+      "on_true": {
+        "set_state": {
+          "A_overall": "positive"
+        },
+        "next_node": "B1"
+      },
+      "on_false": {
+        "set_state": {
+          "A_overall": "negative"
+        },
+        "next_node": "B1"
+      }
+    },
+    "evaluate_B_overall": {
+      "description": "B1과 B2가 모두 positive이면 B_overall은 positive.",
+      "condition": {
+        "operator": "AND",
+        "clauses": [
+          {
+            "node_result": "B1",
+            "equals": "positive"
+          },
+          {
+            "node_result": "B2",
+            "equals": "positive"
+          }
+        ]
+      },
+      "on_true": {
+        "set_state": {
+          "B_overall": "positive"
+        }
+      },
+      "on_false": {
+        "set_state": {
+          "B_overall": "negative"
+        }
+      }
+    },
+    "evaluate_C_overall": {
+      "description": "C1과 C2가 모두 positive이면 C_overall은 positive.",
+      "condition": {
+        "operator": "AND",
+        "clauses": [
+          {
+            "node_result": "C1",
+            "equals": "positive"
+          },
+          {
+            "node_result": "C2",
+            "equals": "positive"
+          }
+        ]
+      },
+      "on_true": {
+        "set_state": {
+          "C_overall": "positive"
+        }
+      },
+      "on_false": {
+        "set_state": {
+          "C_overall": "negative"
+        }
+      }
+    },
+    "evaluate_D_overall": {
+      "description": "D1_duration 또는 D2_duration 중 하나라도 positive이면 D_overall은 positive.",
+      "condition": {
+        "operator": "OR",
+        "clauses": [
+          {
+            "node_result": "D1_duration",
+            "equals": "positive"
+          },
+          {
+            "node_result": "D2_duration",
+            "equals": "positive"
+          }
+        ]
+      },
+      "on_true": {
+        "set_state": {
+          "D_overall": "positive"
+        }
+      },
+      "on_false": {
+        "set_state": {
+          "D_overall": "negative"
+        }
+      }
+    },
+    "stop_rule": {
+      "description": "A, B, C 종합 평가가 모두 negative이면 면담을 중단한다.",
+      "condition": {
+        "operator": "AND",
+        "clauses": [
+          {
+            "state_value": "A_overall",
+            "equals": "negative"
+          },
+          {
+            "state_value": "B_overall",
+            "equals": "negative"
+          },
+          {
+            "state_value": "C_overall",
+            "equals": "negative"
+          }
+        ]
+      },
+      "next_nodes": {
+        "true": "end_interview_early",
+        "false": "D1"
+      }
+    },
+    "final_diagnosis_rule": {
+      "description": "최종 진단 분류 규칙",
+      "logic": [
+        {
+          "condition": {
+            "operator": "AND",
+            "clauses": [
+              {
+                "state_value": "A_overall",
+                "equals": "positive"
+              },
+              {
+                "state_value": "B_overall",
+                "equals": "positive"
+              },
+              {
+                "state_value": "C_overall",
+                "equals": "positive"
+              },
+              {
+                "state_value": "D_overall",
+                "equals": "positive"
+              }
+            ]
+          },
+          "next_node": "end_as_hikikomori"
+        },
+        {
+          "condition": {
+            "operator": "AND",
+            "clauses": [
+              {
+                "state_value": "B_overall",
+                "equals": "positive"
+              },
+              {
+                "state_value": "C_overall",
+                "equals": "positive"
+              },
+              {
+                "state_value": "D_overall",
+                "equals": "positive"
+              }
+            ]
+          },
+          "next_node": "end_as_social_isolation"
+        }
+      ],
+      "default_node": "end_interview_default"
+    }
+  },
+  "langgraph_config": {
+    "state_modifiers": {
+      "interview_results": {
+        "type": "dict",
+        "default": {},
+        "description": "Stores all evaluation results from interview questions"
+      },
+      "conversation_history": {
+        "type": "list",
+        "default": [],
+        "description": "Chat history for context"
+      },
+      "clarification_count": {
+        "type": "int",
+        "default": 0,
+        "description": "Number of clarification attempts"
+      }
+    },
+    "node_types": {
+      "question": "User input evaluation with LLM chain",
+      "static": "Display message only",
+      "rule_executor": "Execute evaluation rules",
+      "router": "Route based on rules",
+      "summary": "Generate final summary"
+    },
+    "edge_conditions": {
+      "clarification_loop": "Return to same node if clarification needed",
+      "rule_based_routing": "Route based on rule evaluation results"
+    }
+  }
+}
