@@ -107,7 +107,7 @@ def main():
             - `interview_complete`: 결과 저장 및 인터뷰 종료 처리
             """
         )
-        st.graphviz_chart(_build_graphviz_dot(), use_container_width=True)
+        st.graphviz_chart(_build_graphviz_dot(), width="stretch")
 
     st.markdown("##### 🔄 평가 흐름 예시")
     st.markdown(

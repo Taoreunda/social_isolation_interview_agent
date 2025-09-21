@@ -1,11 +1,14 @@
-"""
-Main Streamlit Application
-사회적 고립 인터뷰 에이전트 웹앱 메인 채팅 애플리케이션
-"""
+"""Main Streamlit Application."""
 
 import os
+import sys
+from pathlib import Path
 
 import streamlit as st
+
+ROOT_DIR = Path(__file__).resolve().parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from app.auth import render_user_badge, require_admin_login
 from app.config import bootstrap, get_config_value
@@ -107,7 +110,7 @@ def main():
             - `interview_complete`: 결과 저장 및 인터뷰 종료 처리
             """
         )
-        st.graphviz_chart(_build_graphviz_dot(), use_container_width=True)
+        st.graphviz_chart(_build_graphviz_dot(), width="stretch")
 
     st.markdown("##### 🔄 평가 흐름 예시")
     st.markdown(

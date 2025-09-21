@@ -168,7 +168,7 @@ def render_user_badge(context_key: str, *, location: str = "sidebar") -> None:
             """,
             unsafe_allow_html=True,
         )
-        if footer.button("로그아웃", key=f"logout-btn-{context_key}", use_container_width=True):
+        if footer.button("로그아웃", key=f"logout-btn-{context_key}", width="stretch"):
             _perform_logout()
         return
 
