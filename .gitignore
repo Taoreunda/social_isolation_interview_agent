@@ -25,10 +25,14 @@ logs/*.json
 data/interviews/
 data/results/*.json
 *.log
+
+# Documentation and development files
 AGENT.md
+AGENTS.md
 blueprint.md
 PRD.md
 claude.md
+CLAUDE.md
 
 # folders
 data/
