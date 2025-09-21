@@ -23,8 +23,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from app.auth import render_user_badge, require_admin_login
-from app.config import bootstrap, get_config_value
+from app_core.auth import render_user_badge, require_admin_login
+from app_core.config import bootstrap, get_config_value
 from storage import JSONStorage
 
 bootstrap()

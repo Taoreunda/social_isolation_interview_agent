@@ -7,8 +7,8 @@ import os
 
 import streamlit as st
 
-from app.auth import render_user_badge, require_admin_login
-from app.config import bootstrap, get_config_value
+from app_core.auth import render_user_badge, require_admin_login
+from app_core.config import bootstrap, get_config_value
 from interview.flow_engine import InterviewFlowEngineV2
 
 # 정보 안내 페이지

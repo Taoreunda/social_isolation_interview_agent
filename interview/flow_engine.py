@@ -16,7 +16,7 @@ from interview.controller import InterviewController, QuestionConfig
 from interview.state_manager import InterviewState, StateManager
 from logs.interview_logger import InterviewLogger
 from storage.json_storage import JSONStorage
-from app.config import bootstrap, get_config_value
+from app_core.config import bootstrap, get_config_value
 
 logger = logging.getLogger(__name__)
 
