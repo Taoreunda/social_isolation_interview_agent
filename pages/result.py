@@ -176,6 +176,8 @@ def display_result_details(result: Dict) -> None:
     elif diagnosis == "사회적 고립":
         klass = "diagnosis-isolation"
         st.markdown(f'<div class="{klass}"><strong>🔍 진단 결과:</strong> {diagnosis}</div>', unsafe_allow_html=True)
+    elif diagnosis == "추가 평가 필요":
+        st.warning("🔍 진단 결과: 추가 평가 필요")
     else:
         st.info(f"🔍 진단 결과: {diagnosis}")
 

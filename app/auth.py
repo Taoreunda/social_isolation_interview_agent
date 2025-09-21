@@ -128,8 +128,52 @@ def render_user_badge(context_key: str, *, location: str = "sidebar") -> None:
         return
 
     username = session_state.get("username", "관리자")
-    target = st_module.sidebar if location == "sidebar" else st_module
-    target.markdown(f"**👤 {username}**")
+
+    if location == "sidebar":
+        if not st_module.session_state.get("_sidebar_layout_injected", False):
+            st_module.sidebar.markdown(
+                """
+                <style>
+                section[data-testid="stSidebar"] > div:first-child {
+                    display: flex;
+                    flex-direction: column;
+                    height: 100%;
+                }
+                .sidebar-spacer {
+                    flex: 1 1 auto;
+                }
+                .sidebar-footer {
+                    margin-top: auto;
+                    padding-top: 1rem;
+                    border-top: 1px solid var(--secondary-background-color);
+                    background-color: var(--background-color);
+                }
+                .sidebar-footer small {
+                    color: var(--text-color);
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            st_module.session_state["_sidebar_layout_injected"] = True
+
+        st_module.sidebar.markdown('<div class="sidebar-spacer"></div>', unsafe_allow_html=True)
+        footer = st_module.sidebar.container()
+        footer.markdown(
+            f"""
+            <div class="sidebar-footer">
+              <strong>👤 관리자</strong><br>
+              <small>{username}</small>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if footer.button("로그아웃", key=f"logout-btn-{context_key}", use_container_width=True):
+            _perform_logout()
+        return
+
+    target = st_module
+    target.markdown(f"**👤 관리자** {username}")
     if target.button("로그아웃", key=f"logout-btn-{context_key}"):
         _perform_logout()
 

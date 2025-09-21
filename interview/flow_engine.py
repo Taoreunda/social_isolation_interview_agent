@@ -286,12 +286,14 @@ class InterviewFlowEngineV2:
             self.state_manager.add_turn(state, "assistant", message)
             state["interview_complete"] = True
         else:
+            fallback_message = "수집된 정보만으로는 최종 진단을 내리기 어렵습니다. 추가 평가가 필요합니다."
             self.state_manager.add_turn(
                 state,
                 "assistant",
-                "수집된 정보만으로는 최종 진단을 내리기 어렵습니다. 추가 질문이 필요합니다.",
+                fallback_message,
             )
-            state["interview_complete"] = False
+            state["final_diagnosis"] = "추가 평가 필요"
+            state["interview_complete"] = True
 
         state["transition"] = "complete"
         return state
@@ -381,7 +383,7 @@ class InterviewFlowEngineV2:
             try:
                 result_obj = await asyncio.to_thread(chain.invoke, {"user_input": user_input})
                 if result_obj is None:
-                    raise RuntimeError(
+                    raise ValueError(
                         f"LLM returned no structured result for {question.id}"
                     )
                 result = result_obj.dict(exclude_none=True)
@@ -426,9 +428,7 @@ class InterviewFlowEngineV2:
                     error=f"parser_error_attempt_{attempt}: {exc}",
                     attempt=attempt,
                 )
-                raise RuntimeError(
-                    f"Failed to parse LLM response for {question.id}: {exc}"
-                )
+                return self._fallback_clarification(state, question, user_input, interview_logger)
             except Exception as exc:  # pragma: no cover - LLM 호출 오류는 런타임 의존
                 logger.error(
                     "LLM invocation error on %s (attempt %s/%s): %s",
@@ -444,12 +444,8 @@ class InterviewFlowEngineV2:
                     error=f"llm_error_attempt_{attempt}: {exc}",
                     attempt=attempt,
                 )
-                raise RuntimeError(
-                    f"LLM invocation failed for {question.id}: {exc}"
-                )
-        raise RuntimeError(
-            f"LLM failed to produce clarification for {question.id} after retries"
-        )
+                return self._fallback_clarification(state, question, user_input, interview_logger)
+        return self._fallback_clarification(state, question, user_input, interview_logger)
 
     def _detect_conflict(
         self,
@@ -541,6 +537,37 @@ class InterviewFlowEngineV2:
             if message.get("role") == "assistant":
                 return message.get("content", "")
         return ""
+
+    def _fallback_clarification(
+        self,
+        state: InterviewState,
+        question: QuestionConfig,
+        user_input: str,
+        interview_logger: InterviewLogger,
+    ) -> Dict[str, Any]:
+        clarification = (
+            "말씀해 주셔서 감사합니다. 질문에 대해 조금 더 구체적으로 말씀해 주실 수 있을까요?"
+        )
+        if question.text:
+            clarification = (
+                "말씀해 주셔서 감사합니다. "
+                f"'{question.text}'에 대해 조금 더 자세히 설명해 주실 수 있을까요?"
+            )
+        interview_logger.log_turn(
+            node="question_handler",
+            user_input=user_input,
+            llm_response=clarification,
+            evaluation_result={
+                "status": "clarification_needed",
+                "rationale": "llm_fallback",
+            },
+            state_summary=self._summarise_state(state),
+        )
+        return {
+            "status": "clarification_needed",
+            "clarification_question": clarification,
+            "rationale": "llm_fallback",
+        }
 
     def _route_from_question_handler(self, state: InterviewState) -> str:
         transition = state.get("transition", "await_answer")

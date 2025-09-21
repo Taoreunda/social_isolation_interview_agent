@@ -20,8 +20,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="채팅", page_icon="💬", layout="centered")
-
-
 def initialize_session_state() -> None:
     if "engine_error" not in st.session_state:
         st.session_state.engine_error = None
@@ -48,6 +46,8 @@ def initialize_session_state() -> None:
         st.session_state.interview_complete = False
     if "final_diagnosis" not in st.session_state:
         st.session_state.final_diagnosis = None
+    if "chat_initialized" not in st.session_state:
+        st.session_state.chat_initialized = False
 
 
 async def run_interview_step(user_input: str = ""):
@@ -101,22 +101,42 @@ def main() -> None:
     if not require_admin_login("chat"):
         st.stop()
 
-    render_user_badge("chat")
-
     initialize_session_state()
 
     if st.session_state.engine_error:
         st.error(st.session_state.engine_error)
         st.stop()
 
+    control_panel = st.sidebar.container()
+    control_panel.markdown("### 🛠 인터뷰 제어")
+    if control_panel.button("🔁 인터뷰 재시작"):
+        previous_session = st.session_state.get("session_id")
+        if previous_session:
+            st.session_state.engine.reset_session(previous_session)
+        keys_to_clear = [
+            "session_id",
+            "interview_state",
+            "conversation_history",
+            "criteria_results",
+            "question_results",
+            "current_results",
+            "interview_complete",
+            "final_diagnosis",
+            "chat_initialized",
+        ]
+        for key in keys_to_clear:
+            st.session_state.pop(key, None)
+        initialize_session_state()
+        st.rerun()
+
+    if not st.session_state.chat_initialized and not st.session_state.interview_complete:
+        asyncio.run(run_interview_step(""))
+        st.session_state.chat_initialized = True
+        st.rerun()
+
     display_conversation_history()
 
     if not st.session_state.interview_complete:
-        if not st.session_state.conversation_history:
-            result = asyncio.run(run_interview_step(""))
-            if result:
-                st.rerun()
-
         user_input = st.chat_input("답변을 입력하세요...")
         if user_input:
             with st.chat_message("user"):
@@ -137,7 +157,10 @@ def main() -> None:
         st.success("✅ 인터뷰가 완료되었습니다!")
         diagnosis = st.session_state.final_diagnosis
         if diagnosis:
-            st.info(f"🔍 최종 진단: {diagnosis}")
+            if diagnosis == "추가 평가 필요":
+                st.warning("🔍 최종 진단: 추가 평가가 필요한 사례입니다.")
+            else:
+                st.info(f"🔍 최종 진단: {diagnosis}")
         else:
             st.warning("최종 진단이 확정되지 않았습니다. 추가 질문이 필요합니다.")
 
@@ -147,6 +170,9 @@ def main() -> None:
                 st.switch_page("pages/result.py")
         with col2:
             if st.button("🔄 새 인터뷰 시작"):
+                previous_session = st.session_state.get("session_id")
+                if previous_session:
+                    st.session_state.engine.reset_session(previous_session)
                 keys_to_clear = [
                     "session_id",
                     "interview_state",
@@ -159,9 +185,12 @@ def main() -> None:
                 ]
                 for key in keys_to_clear:
                     st.session_state.pop(key, None)
+                st.session_state.chat_initialized = False
                 st.rerun()
 
         st.chat_input("인터뷰가 완료되었습니다.", disabled=True)
+
+    render_user_badge("chat")
 
 
 if __name__ == "__main__":  # pragma: no cover - Streamlit 직접 실행 시
