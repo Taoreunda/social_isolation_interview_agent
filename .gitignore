@@ -15,13 +15,22 @@ wheels/
 .pytest_cache/
 .DS_Store
 .vscode/
+.claude/
+.streamlit/secrets.toml
+!.streamlit/
+!.streamlit/secrets.example.toml
 
 # Runtime artifacts
 logs/*.json
 data/interviews/
 data/results/*.json
 *.log
-tests/
 AGENT.md
 blueprint.md
 PRD.md
+claude.md
+
+# folders
+data/
+references/
+tests/

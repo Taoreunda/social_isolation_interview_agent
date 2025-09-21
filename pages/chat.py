@@ -8,12 +8,13 @@ import time
 from datetime import datetime
 
 import streamlit as st
-from dotenv import load_dotenv
 
+from app.auth import render_user_badge, require_admin_login
+from app.config import bootstrap
 from interview.flow_engine import InterviewFlowEngineV2
 
-# 환경 변수 로드
-load_dotenv()
+# 환경 변수 및 설정 초기화
+bootstrap()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -97,6 +98,11 @@ def stream_assistant_response(text: str, placeholder,
 
 
 def main() -> None:
+    if not require_admin_login("chat"):
+        st.stop()
+
+    render_user_badge("chat")
+
     initialize_session_state()
 
     if st.session_state.engine_error:

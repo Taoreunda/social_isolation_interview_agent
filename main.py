@@ -6,8 +6,9 @@ Main Streamlit Application
 import os
 
 import streamlit as st
-from dotenv import load_dotenv
 
+from app.auth import render_user_badge, require_admin_login
+from app.config import bootstrap, get_config_value
 from interview.flow_engine import InterviewFlowEngineV2
 
 # 정보 안내 페이지
@@ -27,6 +28,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+bootstrap()
+
 
 
 def _build_graphviz_dot() -> str:
@@ -45,14 +48,11 @@ def _build_graphviz_dot() -> str:
 
             return DummyLLM()
 
-    load_dotenv()
-
     try:
         engine = InterviewFlowEngineV2()
     except RuntimeError:
-        load_dotenv(override=True)
-        if not os.getenv("GOOGLE_API_KEY"):
-            os.environ["GOOGLE_API_KEY"] = "dummy-key"
+        if not get_config_value("GOOGLE_API_KEY"):
+            os.environ.setdefault("GOOGLE_API_KEY", "dummy-key")
         engine = GraphOnlyEngine()
 
     graph = engine.graph.get_graph()
@@ -76,6 +76,11 @@ def _build_graphviz_dot() -> str:
 def main():
     """메인 정보 안내 페이지"""
 
+    if not require_admin_login("home"):
+        st.stop()
+
+    render_user_badge("home")
+
     # 헤더
     st.markdown("##### 📋 시스템 개요")
     st.markdown(
@@ -91,18 +96,18 @@ def main():
         """
     )
 
-    st.markdown("##### 🧭 인터뷰 그래프 구조")
-    st.markdown(
-        """
-        LangGraph StateGraph의 주요 노드:
-        - `question_handler`: 질문 진행 및 재질문 관리
-        - `rule_evaluator`: A/B/C/D 기준 계산
-        - `stop_rule_checker`: A/B/C가 모두 비충족인지 판정
-        - `final_diagnosis`: 기준 통합 후 최종 분류 결정
-        - `interview_complete`: 결과 저장 및 인터뷰 종료 처리
-        """
-    )
-    st.graphviz_chart(_build_graphviz_dot(), width="stretch")
+    with st.expander("🧭 인터뷰 그래프 구조", expanded=False):
+        st.markdown(
+            """
+            LangGraph StateGraph의 주요 노드:
+            - `question_handler`: 질문 진행 및 재질문 관리
+            - `rule_evaluator`: A/B/C/D 기준 계산
+            - `stop_rule_checker`: A/B/C가 모두 비충족인지 판정
+            - `final_diagnosis`: 기준 통합 후 최종 분류 결정
+            - `interview_complete`: 결과 저장 및 인터뷰 종료 처리
+            """
+        )
+        st.graphviz_chart(_build_graphviz_dot(), use_container_width=True)
 
     st.markdown("##### 🔄 평가 흐름 예시")
     st.markdown(

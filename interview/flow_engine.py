@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from typing import Any, Dict, Optional
-
-from dotenv import load_dotenv
 
 from pydantic import BaseModel, ValidationError
 from langchain_core.prompts import PromptTemplate
@@ -19,8 +16,11 @@ from interview.controller import InterviewController, QuestionConfig
 from interview.state_manager import InterviewState, StateManager
 from logs.interview_logger import InterviewLogger
 from storage.json_storage import JSONStorage
+from app.config import bootstrap, get_config_value
 
 logger = logging.getLogger(__name__)
+
+bootstrap()
 
 
 class EvaluationOutput(BaseModel):
@@ -53,11 +53,7 @@ class InterviewFlowEngineV2:
         self.session_loggers: Dict[str, InterviewLogger] = {}
 
     def _init_llm(self) -> ChatGoogleGenerativeAI:
-        load_dotenv()
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            load_dotenv(override=True)
-            api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = get_config_value("GOOGLE_API_KEY")
         if not api_key:
             raise RuntimeError("GOOGLE_API_KEY 환경 변수가 설정되어 있지 않습니다.")
 

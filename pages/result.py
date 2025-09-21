@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-import os
 from typing import Dict, List
 
 import json
@@ -14,14 +13,15 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 
+from app.auth import render_user_badge, require_admin_login
+from app.config import bootstrap, get_config_value
 from storage import JSONStorage
 
-load_dotenv()
+bootstrap()
 
 st.set_page_config(
     page_title="결과 분석 - 사회적 고립 인터뷰",
@@ -42,13 +42,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+if not require_admin_login("result"):
+    st.stop()
+
+render_user_badge("result")
+
 
 def initialize_analysis_state() -> None:
     if "storage" not in st.session_state:
         st.session_state.storage = JSONStorage()
     if "analysis_llm" not in st.session_state:
         try:
-            google_api_key = os.getenv("GOOGLE_API_KEY")
+            google_api_key = get_config_value("GOOGLE_API_KEY")
             if not google_api_key:
                 raise RuntimeError("GOOGLE_API_KEY 환경 변수가 필요합니다.")
             st.session_state.analysis_llm = ChatGoogleGenerativeAI(
@@ -167,15 +172,18 @@ def display_result_details(result: Dict) -> None:
     diagnosis = result.get("final_diagnosis", "미분류")
     if diagnosis == "히키코모리":
         klass = "diagnosis-hikikomori"
+        st.markdown(f'<div class="{klass}"><strong>🔍 진단 결과:</strong> {diagnosis}</div>', unsafe_allow_html=True)
     elif diagnosis == "사회적 고립":
         klass = "diagnosis-isolation"
+        st.markdown(f'<div class="{klass}"><strong>🔍 진단 결과:</strong> {diagnosis}</div>', unsafe_allow_html=True)
     else:
-        klass = "diagnosis-normal"
-    st.markdown(f'<div class="{klass}"><strong>🔍 진단 결과:</strong> {diagnosis}</div>', unsafe_allow_html=True)
+        st.info(f"🔍 진단 결과: {diagnosis}")
 
     st.subheader("📊 기준별 평가 결과")
     criteria = result.get("criteria_results", {})
     col_a, col_b, col_c, col_d = st.columns(4)
+
+    abc_all_negative = all(criteria.get(k) is False for k in ("A", "B", "C"))
 
     def render_criterion(column, key: str, label: str) -> None:
         value = criteria.get(key)
@@ -183,6 +191,13 @@ def display_result_details(result: Dict) -> None:
             column.success(f"{label}\n✅ 충족")
         elif value is False:
             column.info(f"{label}\n❌ 비충족")
+        elif (
+            key == "D"
+            and diagnosis == "일반"
+            and abc_all_negative
+            and value in (None, "")
+        ):
+            column.info(f"{label}\n🚫 평가 생략")
         else:
             column.warning(f"{label}\n⏳ 평가 중")
 
@@ -209,20 +224,27 @@ def display_result_details(result: Dict) -> None:
         with st.expander("📑 기록지 응답 요약"):
             rows = []
             for qid, info in question_results.items():
+                extracted = (
+                    info.get("extracted_value")
+                    or info.get("extracted_number")
+                    or info.get("extracted_months")
+                    or info.get("extracted_score")
+                )
                 rows.append({
                     "코드": qid,
                     "질문": question_map.get(qid, qid),
                     "평가": info.get("status"),
-                    "추출값": info.get("extracted_value")
-                    or info.get("extracted_number")
-                    or info.get("extracted_months")
-                    or info.get("extracted_score"),
+                    "추출값": extracted if extracted is not None else "",
                     "근거": info.get("rationale"),
                     "기록시각": info.get("timestamp"),
                 })
 
             rows.sort(key=lambda row: question_order.get(row["코드"], 999))
             df = pd.DataFrame(rows)
+            string_columns = ["코드", "질문", "평가", "추출값", "근거", "기록시각"]
+            for column in string_columns:
+                if column in df.columns:
+                    df[column] = df[column].fillna("").astype("string")
             st.dataframe(df, width="stretch", hide_index=True)
 
 

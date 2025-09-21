@@ -16,14 +16,12 @@ This project provides a Streamlit-based interview experience that guides a parti
    uv sync  # Installs Python dependencies from pyproject
    ```
 
-2. **Configure environment**
-   Copy `.env.example` (if available) or create `.env` and set the required keys:
-   ```bash
-   GOOGLE_API_KEY="your_gemini_api_key"
-   LANGSMITH_API_KEY="your_langsmith_key"
-   LANGSMITH_TRACING=true
-   LANGSMITH_PROJECT="social-isolation-interview"
-   ```
+2. **Configure secrets**
+   Copy `.streamlit/secrets.example.toml` to `.streamlit/secrets.toml` and replace the placeholders:
+   - Under `[admin]`, set `username` / `password` for the administrator account (you may also define `ADMIN_USERNAME` / `ADMIN_PASSWORD` at the top level if you prefer).
+   - Populate the Gemini and LangSmith keys under `[env]` when tracing is required.
+
+   `.env` remains supported; keys defined there override secrets at runtime.
 
 3. **Launch the app**
    ```bash
@@ -33,7 +31,7 @@ This project provides a Streamlit-based interview experience that guides a parti
 
 ## Running the Interview
 
-1. Start the Streamlit app (`uv run streamlit run main.py`).
+1. Start the Streamlit app (`uv run streamlit run main.py`) and log in with the administrator account configured in secrets.
 2. On the landing page, click **“🚀 인터뷰 시작하기”**.
 3. Answer each question. The LLM analyzes responses and may ask clarifications using a warm, empathic tone.
 4. When criteria are satisfied, the flow ends and a summary is stored under `data/results/`.
