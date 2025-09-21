@@ -10,6 +10,7 @@ dependencies = [
     "langchain-google-genai>=2.0.10",
     "langgraph>=0.6.7",
     "pandas>=2.3.2",
+    "ploomber-cloud>=0.4.5",
     "plotly>=6.3.0",
     "python-dotenv>=1.1.1",
     "streamlit>=1.49.1",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any, Optional, Sequence
+from collections.abc import Mapping
 
 from dotenv import load_dotenv
 
@@ -75,14 +76,27 @@ def _lookup_in_secrets(key: str, sections: Sequence[str]) -> Any:
     if secrets is None:  # pragma: no cover - streamlit unavailable in some tests
         return None
 
-    if key in secrets:
-        return secrets[key]
+    try:
+        if key in secrets:
+            value = secrets[key]
+            if isinstance(value, Mapping):
+                return dict(value)
+            return value
+    except Exception:  # pragma: no cover - Secrets may raise when missing
+        pass
 
     for section in sections:
-        if section in secrets:
-            section_data = secrets[section]
-            if isinstance(section_data, dict) and key in section_data:
-                return section_data[key]
+        try:
+            if section in secrets:
+                section_data = secrets[section]
+                if isinstance(section_data, Mapping):
+                    section_dict = dict(section_data)
+                else:
+                    section_dict = section_data
+                if isinstance(section_dict, Mapping) and key in section_dict:
+                    return section_dict[key]
+        except Exception:  # pragma: no cover - tolerant against Secrets access errors
+            continue
     return None
 
 
@@ -113,10 +127,6 @@ def get_config_value(
     sections: Sequence[str] = ("env", "app"),
 ) -> Any:
     """Fetch a configuration value from env vars or Streamlit secrets."""
-
-    value = os.getenv(key)
-    if value not in (None, ""):
-        return value
 
     secrets_value = _lookup_in_secrets(key, sections)
     if secrets_value is not None:

@@ -1,64 +1,19 @@
-# Social Isolation Interview Agent
+# 사회적 고립 인터뷰 에이전트
 
-This project provides a Streamlit-based interview experience that guides a participant through a diagnostic flow for social isolation / hikikomori. Each turn is evaluated by a Gemini-based LLM, while the question order and branching are managed by a LangGraph state machine.
+간단한 Streamlit 앱으로 사회적 고립 여부를 평가하는 인터뷰를 진행합니다. LangGraph가 질문 흐름을 제어하고 Gemini 2.5 Flash가 답변을 분석합니다.
 
-## Key Features
+## 빠른 시작
+1. 의존성 설치: `uv sync`
+2. 비밀 설정: `.streamlit/secrets.toml`을 만들고 `[admin]`(username/password)과 `[env]`(GOOGLE_API_KEY, LANGSMITH_* 등)를 채웁니다.
+3. 앱 실행: `uv run streamlit run main.py`
 
-- **Streamlit UI** – conversational interview interface.
-- **LangGraph Engine** – deterministic question sequencing with rule-based branching.
-- **LLM Evaluation** – Gemini 2.5 Flash judges each answer and proposes clarifications.
-- **JSON Storage** – sanitized interview summaries saved under `data/` for later review.
+## 주요 파일
+- `main.py`: 안내 페이지와 그래프 구조 표시
+- `pages/chat.py`: 인터뷰 진행 채팅 화면
+- `pages/result.py`: 저장된 결과 분석 화면
+- `interview/`: 질문 흐름, 상태 관리, LLM 호출 로직
+- `storage/json_storage.py`: 결과를 `data/results/`에 저장
 
-## Setup
-
-1. **Install dependencies**
-   ```bash
-   uv sync  # Installs Python dependencies from pyproject
-   ```
-
-2. **Configure secrets**
-   Copy `.streamlit/secrets.example.toml` to `.streamlit/secrets.toml` and replace the placeholders:
-   - Under `[admin]`, set `username` / `password` for the administrator account (you may also define `ADMIN_USERNAME` / `ADMIN_PASSWORD` at the top level if you prefer).
-   - Populate the Gemini and LangSmith keys under `[env]` when tracing is required.
-
-   `.env` remains supported; keys defined there override secrets at runtime.
-
-3. **Launch the app**
-   ```bash
-   uv run streamlit run main.py
-   # Then open http://localhost:8501
-   ```
-
-## Running the Interview
-
-1. Start the Streamlit app (`uv run streamlit run main.py`) and log in with the administrator account configured in secrets.
-2. On the landing page, click **“🚀 인터뷰 시작하기”**.
-3. Answer each question. The LLM analyzes responses and may ask clarifications using a warm, empathic tone.
-4. When criteria are satisfied, the flow ends and a summary is stored under `data/results/`.
-
-## Architecture
-
-```
-streamlit UI ─► interview.flow_engine.InterviewFlowEngineV2 ─► LangGraph state machine
-                          │
-                          └── interview.controller.InterviewController (loads interview_flow.json)
-```
-
-- `interview_flow.json`: Defines question order, branching, and rule nodes.
-- `interview/prompts.py`: Holds prompt templates with shared empathic guidance.
-- `interview/flow_engine.py`: Orchestrates LangGraph nodes and LLM evaluations.
-- `storage/json_storage.py`: Persists sanitized interview summaries.
-
-## Tests & Troubleshooting
-
-- Quick sanity check:
-  ```bash
-  uv run python tests/test_flow_scenarios.py
-  ```
-- If the LLM fails to respond (e.g., invalid API key or timeouts), an error is raised immediately so you can correct the environment.
-
-## Notes
-
-- Logs and results are ignored via `.gitignore`; keep sensitive data out of version control.
-- The app expects Python 3.11+ (checked by `pyproject.toml`).
-- Adjust the interview flow by editing `interview_flow.json`; prompts automatically pick up new question text.
+## 테스트
+고려 중인 시나리오나 리팩터링 검증은 `tests/` 아래 스크립트로 실행합니다.
+- 예: `uv run python tests/test_flow_scenarios.py`

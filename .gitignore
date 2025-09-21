@@ -34,3 +34,11 @@ claude.md
 data/
 references/
 tests/
+
+# Large files for deployment
+uv.lock
+*.md
+!README.md
+!DEPLOY_GUIDE.md
+deploy*.sh
+QUICK_DEPLOY.md
