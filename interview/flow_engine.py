@@ -12,8 +12,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from interview.controller import InterviewController, QuestionConfig
-from interview.state_manager import InterviewState, StateManager
+from .controller import InterviewController, QuestionConfig
+from .state_manager import InterviewState, StateManager
 from logs.interview_logger import InterviewLogger
 from storage.json_storage import JSONStorage
 from app_core.config import bootstrap, get_config_value

@@ -5,7 +5,7 @@ Rule Engine for Social Isolation Interview
 
 from typing import Dict, List, Any, Optional
 import logging
-from interview.state_manager import InterviewState
+from .state_manager import InterviewState
 
 logger = logging.getLogger(__name__)
 
