@@ -7,18 +7,22 @@ import logging
 import time
 from datetime import datetime
 
-import streamlit as st
-
 import sys
 from pathlib import Path
 
+# Add root directory to path BEFORE any local imports
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+import streamlit as st
+
 from app_core.auth import render_user_badge, require_admin_login
 from app_core.config import bootstrap
-from interview.flow_engine import InterviewFlowEngineV2
+
+# Import after sys.path is set to avoid circular import issues
+import interview.flow_engine
+InterviewFlowEngineV2 = interview.flow_engine.InterviewFlowEngineV2
 
 # 환경 변수 및 설정 초기화
 bootstrap()

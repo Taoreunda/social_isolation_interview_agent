@@ -4,15 +4,19 @@ import os
 import sys
 from pathlib import Path
 
-import streamlit as st
-
+# Add root directory to path BEFORE any local imports
 ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+import streamlit as st
+
 from app_core.auth import render_user_badge, require_admin_login
 from app_core.config import bootstrap, get_config_value
-from interview.flow_engine import InterviewFlowEngineV2
+
+# Import after sys.path is set to avoid circular import issues
+import interview.flow_engine
+InterviewFlowEngineV2 = interview.flow_engine.InterviewFlowEngineV2
 
 # 정보 안내 페이지
 
