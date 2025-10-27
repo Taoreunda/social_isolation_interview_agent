@@ -3,8 +3,7 @@ Storage Module
 인터뷰 결과 저장소 모듈
 """
 
-from .json_storage import JSONStorage
-
+# Avoid circular import - import directly from json_storage module instead
 __all__ = [
     "JSONStorage"
 ]
