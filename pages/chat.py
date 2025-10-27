@@ -150,20 +150,13 @@ def main() -> None:
     if not st.session_state.interview_complete:
         user_input = st.chat_input("답변을 입력하세요...")
         if user_input:
-            with st.chat_message("user"):
-                st.write(user_input)
-
-            assistant_container = st.chat_message("assistant")
-            response_placeholder = assistant_container.empty()
-            response_placeholder.markdown("답변을 준비하고 있습니다...")
-
+            # Process the input and update state
             result = asyncio.run(run_interview_step(user_input))
             if result:
-                response_text = result.get("response", "")
-                stream_assistant_response(response_text, response_placeholder)
+                # Rerun to display updated conversation history
                 st.rerun()
             else:
-                response_placeholder.markdown("죄송합니다. 처리 중 오류가 발생했습니다.")
+                st.error("죄송합니다. 처리 중 오류가 발생했습니다.")
     else:
         st.success("✅ 인터뷰가 완료되었습니다!")
         diagnosis = st.session_state.final_diagnosis
