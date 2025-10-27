@@ -150,10 +150,23 @@ def main() -> None:
     if not st.session_state.interview_complete:
         user_input = st.chat_input("답변을 입력하세요...")
         if user_input:
-            # Process the input and update state
-            result = asyncio.run(run_interview_step(user_input))
+            # Display user message immediately
+            st.session_state.conversation_history.append({
+                "role": "user",
+                "content": user_input
+            })
+
+            # Show user message
+            with st.chat_message("user"):
+                st.write(user_input)
+
+            # Show loading indicator for assistant
+            with st.chat_message("assistant"):
+                with st.spinner("답변을 생성하는 중..."):
+                    result = asyncio.run(run_interview_step(user_input))
+
             if result:
-                # Rerun to display updated conversation history
+                # Rerun to display updated conversation history with assistant response
                 st.rerun()
             else:
                 st.error("죄송합니다. 처리 중 오류가 발생했습니다.")
