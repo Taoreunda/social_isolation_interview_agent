@@ -150,13 +150,7 @@ def main() -> None:
     if not st.session_state.interview_complete:
         user_input = st.chat_input("답변을 입력하세요...")
         if user_input:
-            # Display user message immediately
-            st.session_state.conversation_history.append({
-                "role": "user",
-                "content": user_input
-            })
-
-            # Show user message
+            # Show user message immediately (will be in history after rerun)
             with st.chat_message("user"):
                 st.write(user_input)
 
