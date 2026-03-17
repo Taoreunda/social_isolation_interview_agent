@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .prompts import PROMPT_TEMPLATES
+from interview.prompts import PROMPT_TEMPLATES
 
 
 FLOW_CONFIG_PATH = Path("interview_flow.json")

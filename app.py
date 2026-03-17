@@ -1,6 +1,5 @@
 """Main Streamlit Application."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -12,11 +11,11 @@ if str(ROOT_DIR) not in sys.path:
 import streamlit as st
 
 from app_core.auth import render_user_badge, require_admin_login
-from app_core.config import bootstrap, get_config_value
+from app_core.config import bootstrap
 
 # Import after sys.path is set to avoid circular import issues
-import interview.flow_engine
-InterviewFlowEngineV2 = interview.flow_engine.InterviewFlowEngineV2
+import interview.engine
+InterviewEngine = interview.engine.InterviewEngine
 
 # 정보 안내 페이지
 
@@ -40,44 +39,37 @@ bootstrap()
 
 
 def _build_graphviz_dot() -> str:
-    class GraphOnlyEngine(InterviewFlowEngineV2):
-        def _init_llm(self):  # noqa: D401
-            class DummyLLM:
-                def with_structured_output(self, schema):
-                    class DummyStructured:
-                        def __init__(self, schema):
-                            self.schema = schema
-
-                        def invoke(self, *args, **kwargs):  # pragma: no cover
-                            raise RuntimeError("LLM이 구성되지 않았습니다.")
-
-                    return DummyStructured(schema)
-
-            return DummyLLM()
-
+    """Build Graphviz DOT for the 2-node ReAct agent graph."""
     try:
-        engine = InterviewFlowEngineV2()
-    except RuntimeError:
-        if not get_config_value("GOOGLE_API_KEY"):
-            os.environ.setdefault("GOOGLE_API_KEY", "dummy-key")
-        engine = GraphOnlyEngine()
+        engine = InterviewEngine()
+        graph = engine.graph.get_graph()
+        lines = ["digraph LangGraph {"]
+        for node in graph.nodes:
+            label = node.replace("_", " ")
+            shape = "ellipse" if node in {"__start__", "__end__"} else "box"
+            lines.append(f'  "{node}" [label="{label}", shape={shape}];')
 
-    graph = engine.graph.get_graph()
-    lines = ["digraph LangGraph {"]
-    for node in graph.nodes:
-        label = node.replace("_", " ")
-        shape = "ellipse" if node in {"__start__", "__end__"} else "box"
-        lines.append(f'  "{node}" [label="{label}", shape={shape}];')
+        for edge in graph.edges:
+            label = edge.data or ""
+            if label:
+                lines.append(f'  "{edge.source}" -> "{edge.target}" [label="{label}"];')
+            else:
+                lines.append(f'  "{edge.source}" -> "{edge.target}";')
 
-    for edge in graph.edges:
-        label = edge.data or ""
-        if label:
-            lines.append(f'  "{edge.source}" -> "{edge.target}" [label="{label}"];')
-        else:
-            lines.append(f'  "{edge.source}" -> "{edge.target}";')
-
-    lines.append("}")
-    return "\n".join(lines)
+        lines.append("}")
+        return "\n".join(lines)
+    except Exception:
+        # Fallback static DOT if engine can't be created (e.g., no API key)
+        return """digraph LangGraph {
+  "__start__" [label="start", shape=ellipse];
+  "llm_call" [label="llm call", shape=box];
+  "tool_node" [label="tool node", shape=box];
+  "__end__" [label="end", shape=ellipse];
+  "__start__" -> "llm_call";
+  "llm_call" -> "tool_node" [label="tools"];
+  "llm_call" -> "__end__" [label="end"];
+  "tool_node" -> "llm_call";
+}"""
 
 
 def main():
@@ -106,12 +98,9 @@ def main():
     with st.expander("🧭 인터뷰 그래프 구조", expanded=False):
         st.markdown(
             """
-            LangGraph StateGraph의 주요 노드:
-            - `question_handler`: 질문 진행 및 재질문 관리
-            - `rule_evaluator`: A/B/C/D 기준 계산
-            - `stop_rule_checker`: A/B/C가 모두 비충족인지 판정
-            - `final_diagnosis`: 기준 통합 후 최종 분류 결정
-            - `interview_complete`: 결과 저장 및 인터뷰 종료 처리
+            ReAct Agent (2노드 StateGraph):
+            - `llm_call`: Agent 추론 + 평가표 tool 호출 결정
+            - `tool_node`: scorecard tool 실행 (기입/수정/초기화/판정)
             """
         )
         st.graphviz_chart(_build_graphviz_dot(), width="stretch")
@@ -119,11 +108,12 @@ def main():
     st.markdown("##### 🔄 평가 흐름 예시")
     st.markdown(
         """
-        1. 사용자가 답변하면 `question_handler`가 LLM 결과를 구조화하여 저장합니다.
-        2. 판단이 명확하지 않거나 이전 답변과 상충하면 즉시 clarification을 요청합니다.
-        3. 충분한 답변이 모이면 `rule_evaluator`가 A/B/C/D 기준을 계산합니다.
-        4. A·B·C가 모두 비충족이면 `stop_rule_checker`가 조기 종료 → 일반 판정.
-        5. 모든 기준에 대한 정보가 모이면 `final_diagnosis`에서 사회적 고립/히키코모리 여부를 확정하고, `interview_complete`가 결과를 저장합니다.
+        1. Agent가 평가표에서 다음 미평가 항목을 확인하고 질문합니다.
+        2. 사용자 답변을 평가 기준에 따라 판단하고 scorecard tool로 기입합니다.
+        3. 모호한 답변에는 공감 표현과 함께 재질문합니다 (같은 항목 최대 3회).
+        4. A3·B2·C2 기입 후 calculate를 호출하여 기준을 계산합니다.
+        5. A·B·C 모두 비충족이면 조기 종료 → 일반 판정.
+        6. 모든 항목 완료 후 교차 검토 → 보고서 작성 → 최종 진단.
         """
     )
 

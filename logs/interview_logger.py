@@ -102,6 +102,32 @@ class InterviewLogger:
 
         self.save()
 
+    def log_tool_call(self,
+                      action: str,
+                      params: Dict[str, Any] = None,
+                      result: str = None):
+        """scorecard tool 호출 로깅"""
+
+        tool_call_data = {
+            "timestamp": datetime.now().isoformat(),
+            "type": "tool_call",
+            "action": action,
+            "params": params,
+            "result": result[:500] + "..." if result and len(result) > 500 else result,
+        }
+
+        self.logs.append(tool_call_data)
+
+        logger.info(f"=== TOOL CALL ===")
+        logger.info(f"Action: {action}")
+        if params:
+            logger.info(f"Params: {params}")
+        if result:
+            logger.info(f"Result: {result[:200]}")
+        logger.info("=== END TOOL CALL ===")
+
+        self.save()
+
     def log_state_change(self,
                         from_node: str,
                         to_node: str,

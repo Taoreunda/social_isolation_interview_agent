@@ -218,6 +218,11 @@ def display_result_details(result: Dict) -> None:
     render_criterion(col_c, "C", "🤝 C 기준")
     render_criterion(col_d, "D", "😟 D 기준")
 
+    report = result.get("report")
+    if report:
+        st.subheader("📝 교차 검토 보고서")
+        st.markdown(report)
+
     question_map, question_order = load_flow_question_map()
 
     conversation = result.get("conversation_history", [])

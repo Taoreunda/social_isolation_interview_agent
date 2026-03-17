@@ -111,7 +111,7 @@ def sync_env_from_secrets(section: str = "env") -> None:
         return
 
     section_data = secrets[section]
-    if not isinstance(section_data, dict):
+    if not isinstance(section_data, Mapping):
         return
 
     for key, value in section_data.items():
@@ -127,6 +127,10 @@ def get_config_value(
     sections: Sequence[str] = ("env", "app"),
 ) -> Any:
     """Fetch a configuration value from env vars or Streamlit secrets."""
+
+    env_value = os.environ.get(key)
+    if env_value is not None:
+        return env_value
 
     secrets_value = _lookup_in_secrets(key, sections)
     if secrets_value is not None:

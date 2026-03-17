@@ -21,8 +21,8 @@ from app_core.auth import render_user_badge, require_admin_login
 from app_core.config import bootstrap
 
 # Import after sys.path is set to avoid circular import issues
-import interview.flow_engine
-InterviewFlowEngineV2 = interview.flow_engine.InterviewFlowEngineV2
+import interview.engine
+InterviewEngine = interview.engine.InterviewEngine
 
 # 환경 변수 및 설정 초기화
 bootstrap()
@@ -37,7 +37,7 @@ def initialize_session_state() -> None:
 
     if "engine" not in st.session_state:
         try:
-            st.session_state.engine = InterviewFlowEngineV2()
+            st.session_state.engine = InterviewEngine()
             st.session_state.engine_error = None
         except RuntimeError as exc:
             st.session_state.engine_error = str(exc)
