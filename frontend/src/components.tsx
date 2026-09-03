@@ -2,14 +2,14 @@ import { useState, useRef, useEffect, type FormEvent } from 'react';
 import type { ChatMessage, ScorecardData, ScorecardSection, ScorecardItem, ExpertSummary } from './types';
 import { submitExpertReview, bulkApproveReviews } from './api';
 
-// ── Colors ──
-export const SAGE = '#5B8A72';
-export const SAGE_LIGHT = '#E8F2EC';
-export const SAGE_MUTED = '#8FB5A0';
-export const AMBER = '#C49B4A';
-export const AMBER_LIGHT = '#FDF6E8';
-export const CORAL = '#D4786A';
-export const CORAL_LIGHT = '#FDF0EE';
+// ── Theme tokens ──
+export const SAGE = 'var(--accent)';
+export const SAGE_LIGHT = 'var(--hover)';
+export const SAGE_MUTED = 'var(--accent)';
+export const AMBER = 'var(--accent)';
+export const AMBER_LIGHT = 'var(--hover)';
+export const CORAL = 'var(--ink)';
+export const CORAL_LIGHT = 'var(--muted)';
 
 export const E_QUESTIONS = ['E1', 'E2'];
 
@@ -47,7 +47,7 @@ export function ChatBubble({ msg }: { msg: ChatMessage }) {
         maxWidth: '78%', padding: '11px 15px',
         borderRadius: isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
         background: isUser ? SAGE : 'var(--bg-card)',
-        color: isUser ? '#fff' : 'var(--text-primary)',
+        color: isUser ? 'var(--surface)' : 'var(--text-primary)',
         fontSize: 14, lineHeight: 1.65,
         boxShadow: isUser ? 'none' : 'var(--shadow-sm)',
         border: isUser ? 'none' : '1px solid var(--border-light)',
@@ -110,7 +110,7 @@ export function ChatPanel({
           />
           <button type="submit" disabled={loading || !input.trim()} style={{
             padding: '10px 20px', borderRadius: 12, border: 'none',
-            background: SAGE, color: '#fff', fontSize: 13.5, fontWeight: 500,
+            background: SAGE, color: 'var(--surface)', fontSize: 13.5, fontWeight: 500,
             fontFamily: 'var(--font-body)', cursor: loading ? 'not-allowed' : 'pointer',
             opacity: loading ? 0.6 : 1,
           }}>전송</button>
@@ -277,13 +277,13 @@ export function ItemCard({
                 <>
                   <button onClick={handleApprove} disabled={submitting} style={{
                     fontSize: 11, padding: '3px 10px', borderRadius: 6,
-                    border: `1px solid ${SAGE}`, background: 'white', color: SAGE,
+                    border: `1px solid ${SAGE}`, background: 'var(--surface)', color: SAGE,
                     cursor: 'pointer', fontWeight: 500,
                   }}>동의</button>
                   {!isE && (
                     <button onClick={() => setExpanded(!expanded)} disabled={submitting} style={{
                       fontSize: 11, padding: '3px 10px', borderRadius: 6,
-                      border: '1px solid var(--border)', background: 'white',
+                      border: '1px solid var(--border)', background: 'var(--surface)',
                       color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500,
                     }}>변경 {expanded ? '▴' : '▾'}</button>
                   )}
@@ -322,7 +322,7 @@ export function ItemCard({
                   value={rationale} onChange={e => setRationale(e.target.value)}
                   style={{
                     width: '100%', padding: '6px 10px', borderRadius: 6, fontSize: 12,
-                    border: '1px solid var(--border)', background: 'white',
+                    border: '1px solid var(--border)', background: 'var(--surface)',
                     fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box',
                   }}
                 />
@@ -330,12 +330,12 @@ export function ItemCard({
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={handleOverride} disabled={submitting || overrideStatus === item.status} style={{
                   fontSize: 11, padding: '4px 12px', borderRadius: 6, border: 'none',
-                  background: SAGE, color: 'white', cursor: 'pointer', fontWeight: 500,
+                  background: SAGE, color: 'var(--surface)', cursor: 'pointer', fontWeight: 500,
                   opacity: overrideStatus === item.status ? 0.5 : 1,
                 }}>적용</button>
                 <button onClick={() => { setExpanded(false); setRationale(''); }} style={{
                   fontSize: 11, padding: '4px 12px', borderRadius: 6,
-                  border: '1px solid var(--border)', background: 'white',
+                  border: '1px solid var(--border)', background: 'var(--surface)',
                   color: 'var(--text-secondary)', cursor: 'pointer',
                 }}>취소</button>
               </div>
@@ -513,7 +513,7 @@ export function ScorecardPanel({
           <span style={{ color: SAGE, fontWeight: 600 }}>{data.answered}/{data.total} ({data.progress}%)</span>
         </div>
         <div style={{ height: 5, borderRadius: 3, background: 'var(--border-light)', overflow: 'hidden' }}>
-          <div style={{ height: '100%', borderRadius: 3, background: `linear-gradient(90deg, ${AMBER}, ${SAGE})`, width: `${data.progress}%`, transition: 'width 0.3s' }} />
+          <div style={{ height: '100%', borderRadius: 3, background: SAGE, width: `${data.progress}%`, transition: 'width 0.3s' }} />
         </div>
       </div>
 
@@ -536,8 +536,8 @@ export function ScorecardPanel({
 
       {data.diagnosis && (
         <div style={{
-          background: data.diagnosis === '히키코모리' ? '#ffebee' : data.diagnosis === '사회적 고립' ? '#fff3e0' : '#e8f5e9',
-          borderLeft: `4px solid ${data.diagnosis === '히키코모리' ? '#f44336' : data.diagnosis === '사회적 고립' ? '#ff9800' : '#4caf50'}`,
+          background: data.diagnosis === '히키코모리' ? 'var(--muted)' : data.diagnosis === '사회적 고립' ? 'var(--hover)' : 'var(--surface)',
+          border: `1px solid ${data.diagnosis === '히키코모리' ? CORAL : data.diagnosis === '사회적 고립' ? AMBER : SAGE}`,
           padding: '10px 14px', margin: '8px 0', borderRadius: 4,
         }}>
           <strong>AI 진단: {data.diagnosis}</strong>
@@ -545,13 +545,13 @@ export function ScorecardPanel({
       )}
 
       {data.early_stop && (
-        <div style={{ background: '#fff3e0', borderLeft: '4px solid #ff9800', padding: '8px 14px', margin: '4px 0', borderRadius: 4, fontSize: '0.9em' }}>
+        <div style={{ background: 'var(--hover)', border: `1px solid ${AMBER}`, padding: '8px 14px', margin: '4px 0', borderRadius: 4, fontSize: '0.9em' }}>
           조기종료 (A, B, C 모두 비충족)
         </div>
       )}
 
       {data.report && (
-        <div style={{ marginTop: 8, padding: 10, background: '#f9f9f9', borderRadius: 6, fontSize: '0.9em' }}>
+        <div style={{ marginTop: 8, padding: 10, background: 'var(--muted)', borderRadius: 6, fontSize: '0.9em' }}>
           <strong>교차검토 보고서</strong><br />{data.report}
         </div>
       )}

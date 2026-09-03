@@ -1,47 +1,81 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
 :root {
-  --bg-primary: #FAF8F5;
-  --bg-card: #FFFFFF;
-  --bg-input: #F5F3F0;
-
-  --accent: #5B8A72;
-  --accent-light: #E8F2EC;
-  --accent-hover: #4A7660;
-  --accent-muted: #8FB5A0;
-
-  --amber: #C49B4A;
-  --amber-light: #FDF6E8;
-
-  --coral: #D4786A;
-  --coral-light: #FDF0EE;
-
-  --text-primary: #2C2C2C;
-  --text-secondary: #6B6560;
-  --text-tertiary: #9E9891;
-  --text-on-accent: #FFFFFF;
-
-  --border: #E8E4DF;
-  --border-light: #F0EDE8;
-
-  --shadow-sm: 0 1px 3px rgba(44,44,44,0.04);
-  --shadow-focus: 0 0 0 3px rgba(91,138,114,0.15);
-
-  --font-display: 'Playfair Display', serif;
-  --font-body: 'Noto Sans KR', -apple-system, sans-serif;
+  --ink: #17233C;
+  --surface: #F6F4EE;
+  --accent: #2F6F68;
+  --line: color-mix(in srgb, var(--ink) 16%, transparent);
+  --muted: color-mix(in srgb, var(--ink) 7%, var(--surface));
+  --hover: color-mix(in srgb, var(--accent) 12%, var(--surface));
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+@theme inline {
+  --color-background: var(--surface);
+  --color-foreground: var(--ink);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--surface);
+  --color-secondary: var(--muted);
+  --color-secondary-foreground: var(--ink);
+  --color-accent: var(--hover);
+  --color-accent-foreground: var(--ink);
+  --color-muted: var(--muted);
+  --color-muted-foreground: color-mix(in srgb, var(--ink) 66%, transparent);
+  --color-border: var(--line);
+  --color-input: var(--line);
+  --color-ring: var(--accent);
+  --color-destructive: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
 
 body {
-  font-family: var(--font-body);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  height: 100vh;
+  margin: 0;
   overflow: hidden;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-#root {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  border-radius: 8px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Compatibility aliases keep the unchanged app shell on the shared semantic theme. */
+:root {
+  --bg-primary: var(--surface);
+  --bg-card: var(--surface);
+  --bg-input: var(--muted);
+  --text-primary: var(--ink);
+  --text-secondary: color-mix(in srgb, var(--ink) 76%, transparent);
+  --text-tertiary: color-mix(in srgb, var(--ink) 66%, transparent);
+  --text-on-accent: var(--surface);
+  --border: var(--line);
+  --border-light: var(--line);
+  --shadow-sm: 0 0 0 1px var(--line);
+  --shadow-focus: 0 0 0 1px var(--accent);
+  --font-display: system-ui, sans-serif;
+  --font-body: system-ui, sans-serif;
 }

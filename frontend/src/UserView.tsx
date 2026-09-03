@@ -195,7 +195,7 @@ export default function UserView() {
         </div>
         <button onClick={doStart} disabled={loading} style={{
           padding: '12px 32px', borderRadius: 10, border: 'none',
-          background: SAGE, color: '#fff', fontSize: 14, fontWeight: 600,
+          background: SAGE, color: 'var(--surface)', fontSize: 14, fontWeight: 600,
           cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)',
           opacity: loading ? 0.6 : 1,
         }}>인터뷰 시작</button>
@@ -233,7 +233,7 @@ export default function UserView() {
         <div style={{ height: 6, borderRadius: 3, background: 'var(--border-light)', overflow: 'hidden' }}>
           <div style={{
             height: '100%', borderRadius: 3,
-            background: `linear-gradient(90deg, ${AMBER}, ${SAGE})`,
+            background: SAGE,
             width: `${progress.progress}%`, transition: 'width 0.3s',
           }} />
         </div>
@@ -265,7 +265,7 @@ export default function UserView() {
             </div>
             <button onClick={handleStartNew} style={{
               padding: '8px 16px', borderRadius: 8, border: 'none',
-              background: SAGE, color: '#fff', fontSize: 13, fontWeight: 500,
+              background: SAGE, color: 'var(--surface)', fontSize: 13, fontWeight: 500,
               cursor: 'pointer', fontFamily: 'var(--font-body)',
             }}>새 인터뷰 시작</button>
           </div>

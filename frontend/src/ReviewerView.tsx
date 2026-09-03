@@ -14,11 +14,11 @@ function SessionPicker({
 }) {
   return (
     <div style={{
-      padding: '12px 24px', borderBottom: '1px solid var(--border-light)',
-      background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: 10,
+      padding: '12px 24px', borderBottom: '1px solid var(--line)',
+      background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 10,
       flexShrink: 0,
     }}>
-      <span style={{ fontSize: 12.5, color: 'var(--text-secondary)', fontWeight: 500 }}>
+      <span style={{ fontSize: 12.5, color: 'var(--color-muted-foreground)', fontWeight: 500 }}>
         세션:
       </span>
       <select
@@ -27,8 +27,8 @@ function SessionPicker({
         disabled={loading}
         style={{
           flex: 1, padding: '7px 10px', borderRadius: 8,
-          border: '1px solid var(--border)', background: 'var(--bg-input)',
-          fontSize: 12.5, fontFamily: 'var(--font-body)', color: 'var(--text-primary)',
+          border: '1px solid var(--line)', background: 'var(--muted)',
+          fontSize: 12.5, fontFamily: 'var(--font-body)', color: 'var(--ink)',
           maxWidth: 600, cursor: 'pointer',
         }}
       >
@@ -45,8 +45,8 @@ function SessionPicker({
         })}
       </select>
       <button onClick={onRefresh} disabled={loading} style={{
-        padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)',
-        background: 'var(--bg-card)', fontSize: 12, color: 'var(--text-secondary)',
+        padding: '7px 12px', borderRadius: 8, border: '1px solid var(--line)',
+        background: 'var(--surface)', fontSize: 12, color: 'var(--color-muted-foreground)',
         cursor: 'pointer', fontFamily: 'var(--font-body)',
       }}>새로고침</button>
       {selectedId && (
@@ -54,8 +54,8 @@ function SessionPicker({
           href={csvDownloadUrl(selectedId)}
           target="_blank" rel="noreferrer"
           style={{
-            padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)',
-            background: 'var(--bg-card)', fontSize: 12, color: 'var(--text-secondary)',
+            padding: '7px 12px', borderRadius: 8, border: '1px solid var(--line)',
+            background: 'var(--surface)', fontSize: 12, color: 'var(--color-muted-foreground)',
             textDecoration: 'none', fontFamily: 'var(--font-body)',
           }}
         >CSV</a>
@@ -178,7 +178,7 @@ export default function ReviewerView({ active = true }: { active?: boolean }) {
           {!detail && !detailLoading && (
             <div style={{
               height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--text-tertiary)', fontSize: 13, padding: 24, textAlign: 'center',
+              color: 'var(--color-muted-foreground)', fontSize: 13, padding: 24, textAlign: 'center',
             }}>
               {sessions.length === 0
                 ? '저장된 세션이 없습니다. 사용자 탭에서 인터뷰를 진행해 주세요.'
@@ -188,7 +188,7 @@ export default function ReviewerView({ active = true }: { active?: boolean }) {
           {detailLoading && (
             <div style={{
               height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--text-tertiary)', fontSize: 13,
+              color: 'var(--color-muted-foreground)', fontSize: 13,
             }}>로딩 중...</div>
           )}
           {detail && (
@@ -201,7 +201,7 @@ export default function ReviewerView({ active = true }: { active?: boolean }) {
             <DragHandle onResize={handleResize} />
             <div style={{
               width: sidebarWidth, minWidth: sidebarWidth, overflow: 'hidden',
-              background: 'var(--bg-card)',
+              background: 'var(--surface)',
             }}>
               <div style={{ width: sidebarWidth, height: '100%' }}>
                 {scorecard && (
