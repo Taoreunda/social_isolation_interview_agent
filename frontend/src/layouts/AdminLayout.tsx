@@ -1,4 +1,5 @@
-import { ClipboardList, LogOut, Users } from 'lucide-react'
+import { useState } from 'react'
+import { AlertCircle, ClipboardList, LogOut, Users } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
@@ -11,6 +12,16 @@ const navigation = [
 
 export function AdminLayout() {
   const { user, logout } = useSession()
+  const [logoutError, setLogoutError] = useState(false)
+
+  async function handleLogout(): Promise<void> {
+    setLogoutError(false)
+    try {
+      await logout()
+    } catch {
+      setLogoutError(true)
+    }
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -30,10 +41,16 @@ export function AdminLayout() {
         </nav>
         <div className="ml-auto flex items-center gap-2 text-sm">
           <span>{user?.username}</span>
-          <Button onClick={() => void logout()} size="sm" variant="outline">
+          <Button onClick={() => void handleLogout()} size="sm" variant="outline">
             <LogOut aria-hidden="true" />
             로그아웃
           </Button>
+          {logoutError && (
+            <p className="inline-flex items-center gap-1" role="alert">
+              <AlertCircle aria-hidden="true" className="size-4" />
+              로그아웃 실패
+            </p>
+          )}
         </div>
       </header>
       <main className="flex-1"><Outlet /></main>

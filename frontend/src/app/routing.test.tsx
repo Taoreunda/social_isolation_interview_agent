@@ -146,13 +146,16 @@ function renderSession(
   )
 }
 
-async function resolveInitialUser(api: DeferredAppApi, currentUser: CurrentUser | null): Promise<void> {
+async function resolveInitialUser(
+  api: DeferredAppApi,
+  currentUser: CurrentUser | null,
+  expectedText = currentUser ? `authenticated:${currentUser.username}` : 'guest:guest',
+): Promise<void> {
   expect(api.currentUserRequests).toHaveLength(1)
   await act(async () => {
     api.currentUserRequests[0].resolve(currentUser)
   })
-  const session = currentUser ? `authenticated:${currentUser.username}` : 'guest:guest'
-  expect(await screen.findByText(session)).toBeInTheDocument()
+  expect(await screen.findByText(expectedText)).toBeInTheDocument()
 }
 
 async function resolveInitialGuest(api: DeferredAppApi): Promise<void> {
@@ -224,6 +227,31 @@ describe('role-protected routes', () => {
 
     expect(await screen.findByText('Login')).toBeInTheDocument()
     expect(await api.getCurrentUser()).toBeNull()
+  })
+
+  it.each([
+    { entry: '/interview', user: participant, page: 'Interview' },
+    { entry: '/admin', user: admin, page: 'Admin' },
+  ])('keeps the protected $entry route and allows retry after logout failure', async ({ entry, user: currentUser, page }) => {
+    const api = new DeferredAppApi()
+    renderRoutes(api, entry)
+    await resolveInitialUser(api, currentUser, currentUser.username)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '로그아웃' }))
+    await act(async () => {
+      api.logoutRequests[0].reject(new Error('logout failed'))
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('로그아웃 실패')
+    expect(screen.getByText(page)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '로그아웃' }))
+    await act(async () => {
+      api.logoutRequests[1].resolve()
+    })
+
+    expect(await screen.findByText('Login')).toBeInTheDocument()
   })
 })
 
