@@ -140,8 +140,9 @@ describe('administrator interview review', () => {
     const api = createApi()
     renderDashboard(api)
 
-    const link = await screen.findByRole('link', { name: /P-001/ })
+    const link = await screen.findByRole('link', { name: 'P-001 인터뷰 검토' })
     expect(link).toHaveAttribute('href', '/admin/interviews/interview-001')
+    expect(within(link).getByText('검토')).not.toHaveClass('sr-only')
   })
 
   it('keeps queue and scorecard headers accessible on mobile-sized layouts', async () => {
@@ -268,7 +269,7 @@ describe('administrator interview review', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'q1 변경' }))
     await userEvent.setup().type(screen.getByLabelText('근거'), '임시 근거')
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Close' }))
+    await userEvent.setup().click(screen.getByRole('button', { name: '대화상자 닫기' }))
     await userEvent.setup().click(screen.getByRole('button', { name: 'q1 변경' }))
     expect(screen.getByLabelText('근거')).toHaveValue('')
     page.unmount()
@@ -328,7 +329,7 @@ describe('administrator interview review', () => {
         </MemoryRouter>
       </ApiProvider>,
     )
-    const link = await screen.findByRole('link', { name: /P-001/ })
+    const link = await screen.findByRole('link', { name: 'P-001 인터뷰 검토' })
 
     link.focus()
     await user.keyboard('{Enter}')
@@ -547,7 +548,7 @@ describe('administrator interview review', () => {
     await user.click(screen.getByRole('radio', { name: '부정' }))
     await user.type(screen.getByRole('textbox', { name: '근거' }), '늦은 성공 근거')
     await user.click(screen.getByRole('button', { name: '저장' }))
-    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await user.click(screen.getByRole('button', { name: '대화상자 닫기' }))
     await act(async () => pending.resolve(committed))
 
     expect(await screen.findByText('늦은 확정 값')).toBeInTheDocument()
@@ -568,7 +569,7 @@ describe('administrator interview review', () => {
     await user.type(screen.getByRole('textbox', { name: '근거' }), '   ')
     await user.click(screen.getByRole('button', { name: '저장' }))
     expect(screen.getByRole('alert')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await user.click(screen.getByRole('button', { name: '대화상자 닫기' }))
 
     await user.click(screen.getByRole('button', { name: 'q1 변경' }))
     expect(screen.getByRole('textbox', { name: '근거' })).toHaveValue('')
@@ -593,7 +594,7 @@ describe('administrator interview review', () => {
     await user.click(screen.getByRole('radio', { name: '부정' }))
     await user.type(screen.getByRole('textbox', { name: '근거' }), '첫 번째 근거')
     await user.click(screen.getByRole('button', { name: '저장' }))
-    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await user.click(screen.getByRole('button', { name: '대화상자 닫기' }))
     await act(async () => first.reject(new Error('late failure')))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

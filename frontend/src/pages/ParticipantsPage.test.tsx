@@ -277,7 +277,7 @@ describe('ParticipantsPage', () => {
     await user.type(screen.getByLabelText('사용자 이름'), 'participant02')
     await user.type(screen.getByLabelText('참여자 코드'), 'P-002')
     await user.click(screen.getByRole('button', { name: '생성' }))
-    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await user.click(screen.getByRole('button', { name: '대화상자 닫기' }))
 
     await act(async () => {
       api.createRequests[0].resolve(participant())
@@ -298,7 +298,7 @@ describe('ParticipantsPage', () => {
     await user.click(screen.getByRole('button', { name: '비활성화' }))
     await user.click(screen.getByRole('button', { name: '비활성화' }))
     expect(api.disableRequests).toHaveLength(1)
-    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await user.click(screen.getByRole('button', { name: '대화상자 닫기' }))
     await user.click(screen.getByRole('button', { name: '비활성화' }))
     expect(screen.getByRole('button', { name: '비활성화' })).toBeDisabled()
 

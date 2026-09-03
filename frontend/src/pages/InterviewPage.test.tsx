@@ -1,17 +1,17 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
-import type { AppApi, InterviewDetail } from '@/app/contracts'
+import type { AppApi, ParticipantInterview } from '@/app/contracts'
+import { mockCredentials } from '@/mocks/fixtures'
+import { MockAppApi } from '@/mocks/mock-api'
 import { InterviewPage } from './InterviewPage'
 
-const interview: InterviewDetail = {
+const interview: ParticipantInterview = {
   id: 'interview-001',
-  participantCode: 'P-001',
   status: 'active',
   progress: 40,
-  reviewStatus: 'unreviewed',
   updatedAt: '2026-08-25T09:00:00.000Z',
   messages: [
     {
@@ -21,18 +21,9 @@ const interview: InterviewDetail = {
       createdAt: '2026-08-25T09:00:00.000Z',
     },
   ],
-  scorecard: [{
-    questionId: 'q1',
-    question: '연구 전용 질문',
-    value: '연구 전용 값',
-    rationale: '연구 전용 근거',
-    aiStatus: 'positive',
-    expertStatus: null,
-    expertRationale: null,
-  }],
 }
 
-function cloneInterview(detail: InterviewDetail = interview): InterviewDetail {
+function cloneInterview(detail: ParticipantInterview = interview): ParticipantInterview {
   return structuredClone(detail)
 }
 
@@ -70,8 +61,36 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+function createStorage(): Storage {
+  const values = new Map<string, string>()
+  return {
+    get length() {
+      return values.size
+    },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => values.set(key, value),
+  }
+}
+
+const nativeCrypto = globalThis.crypto
+
 beforeEach(() => {
-  vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'ed7d20c9-392d-48ea-9e8f-e1e965991edc') })
+  Object.defineProperties(window, {
+    localStorage: { configurable: true, value: createStorage() },
+    sessionStorage: { configurable: true, value: createStorage() },
+  })
+  vi.stubGlobal('crypto', {
+    getRandomValues: nativeCrypto.getRandomValues.bind(nativeCrypto),
+    randomUUID: vi.fn(() => 'ed7d20c9-392d-48ea-9e8f-e1e965991edc'),
+    subtle: nativeCrypto.subtle,
+  })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe('InterviewPage', () => {
@@ -115,7 +134,7 @@ describe('InterviewPage', () => {
   })
 
   it('disables duplicate submission while sending', async () => {
-    const response = deferred<InterviewDetail>()
+    const response = deferred<ParticipantInterview>()
     const api = createApi({ sendMessage: vi.fn(() => response.promise) })
     renderInterview(api)
     await screen.findByRole('heading', { name: '인터뷰 시작' })
@@ -150,6 +169,37 @@ describe('InterviewPage', () => {
     expect(api.sendMessage).toHaveBeenNthCalledWith(1, 'interview-001', 'ed7d20c9-392d-48ea-9e8f-e1e965991edc', '응답')
     expect(api.sendMessage).toHaveBeenNthCalledWith(2, 'interview-001', 'ed7d20c9-392d-48ea-9e8f-e1e965991edc', '응답')
     expect(crypto.randomUUID).toHaveBeenCalledOnce()
+  })
+
+  it('retries a committed real mock turn without duplicating it and shows the retry action', async () => {
+    const api = new MockAppApi()
+    await api.login({ ...mockCredentials.participant, remember: false })
+    const commitTurn = api.sendMessage.bind(api)
+    let rejectCommittedResponse = true
+    vi.spyOn(api, 'sendMessage').mockImplementation(async (...args) => {
+      const committed = await commitTurn(...args)
+      if (rejectCommittedResponse) {
+        rejectCommittedResponse = false
+        throw new Error('response lost after commit')
+      }
+      return committed
+    })
+    const user = userEvent.setup()
+    renderInterview(api)
+    await screen.findByRole('heading', { name: '인터뷰 시작' })
+
+    await user.type(screen.getByLabelText('답변 입력'), '커밋 후 재시도 응답')
+    await user.click(screen.getByRole('button', { name: '답변 전송' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('답변을 보내지 못했습니다')
+
+    const retry = screen.getByRole('button', { name: '다시 시도' })
+    expect(within(retry).getByText('다시 시도')).not.toHaveClass('sr-only')
+    await user.click(retry)
+
+    expect(await screen.findByText('커밋 후 재시도 응답')).toBeInTheDocument()
+    const latest = await api.getCurrentInterview()
+    expect(latest.messages.filter((message) => message.content === '커밋 후 재시도 응답')).toHaveLength(1)
+    expect(latest.messages).toHaveLength(3)
   })
 
   it('restores the latest committed mock turn after remount', async () => {
@@ -199,7 +249,7 @@ describe('InterviewPage', () => {
   })
 
   it('ignores a load result after unmount', async () => {
-    const load = deferred<InterviewDetail>()
+    const load = deferred<ParticipantInterview>()
     const api = createApi({ getCurrentInterview: vi.fn(() => load.promise) })
     const page = renderInterview(api)
     page.unmount()
@@ -209,7 +259,19 @@ describe('InterviewPage', () => {
   })
 
   it('hides scorecard and diagnosis from participants', async () => {
-    const api = createApi()
+    const unsafeResponse = {
+      ...cloneInterview(),
+      participantCode: 'P-001',
+      reviewStatus: 'unreviewed',
+      scorecard: [{
+        questionId: 'q1',
+        question: '연구 전용 질문',
+        value: '연구 전용 값',
+        rationale: '연구 전용 근거',
+        aiStatus: 'positive',
+      }],
+    }
+    const api = createApi({ getCurrentInterview: vi.fn().mockResolvedValue(unsafeResponse) })
     renderInterview(api)
     const page = await screen.findByRole('main')
 

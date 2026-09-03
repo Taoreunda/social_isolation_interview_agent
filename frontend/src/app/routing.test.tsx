@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App, * as AppModule from '../App'
 import { ApiProvider } from './api-context'
-import type { AppApi, CurrentUser, InterviewDetail, InterviewListItem, LoginInput } from './contracts'
+import { ApiError } from './api-error'
+import type { AppApi, CurrentUser, InterviewListItem, LoginInput, ParticipantInterview } from './contracts'
 import { MockAppApi } from '../mocks/mock-api'
 import { createMockFixtureState } from '../mocks/fixtures'
 import { AdminLayout } from '../layouts/AdminLayout'
@@ -77,11 +78,11 @@ class DeferredAppApi extends MockAppApi {
 }
 
 class DeferredRoutePageApi extends MockAppApi {
-  readonly currentInterviewRequests: Deferred<InterviewDetail>[] = []
+  readonly currentInterviewRequests: Deferred<ParticipantInterview>[] = []
   readonly interviewListRequests: Deferred<InterviewListItem[]>[] = []
 
-  override getCurrentInterview(): Promise<InterviewDetail> {
-    const request = deferred<InterviewDetail>()
+  override getCurrentInterview(): Promise<ParticipantInterview> {
+    const request = deferred<ParticipantInterview>()
     this.currentInterviewRequests.push(request)
     return request.promise
   }
@@ -90,6 +91,16 @@ class DeferredRoutePageApi extends MockAppApi {
     const request = deferred<InterviewListItem[]>()
     this.interviewListRequests.push(request)
     return request.promise
+  }
+}
+
+class FirstSuccessSecondFailureLogoutApi extends MockAppApi {
+  logoutCalls = 0
+
+  override logout(): Promise<void> {
+    this.logoutCalls += 1
+    if (this.logoutCalls === 1) return super.logout()
+    return Promise.reject(new ApiError(401, 'Session expired'))
   }
 }
 
@@ -178,7 +189,7 @@ function SessionControls({
   onSession?: (session: ReturnType<typeof useSession>) => void
 }) {
   const session = useSession()
-  const { login, logout, refresh, status, user } = session
+  const { isLoggingOut, login, logout, refresh, status, user } = session
   const value = `${status}:${user?.username ?? 'guest'}`
   onRender?.(value)
   onSession?.(session)
@@ -190,7 +201,7 @@ function SessionControls({
       <button onClick={() => void login({ username: 'participant01', password: 'research123!', remember: false })}>
         login
       </button>
-      <button onClick={() => void logout()}>logout</button>
+      <button aria-busy={isLoggingOut} disabled={isLoggingOut} onClick={() => void logout()}>logout</button>
     </>
   )
 }
@@ -295,6 +306,36 @@ describe('complete application route tree', () => {
     expect(screen.getByTestId('location-path')).toHaveTextContent('/account/password')
   })
 
+  it('opens password change from the participant shell account action', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: false })
+    renderCompleteRoutes(api, '/interview')
+    await screen.findByRole('heading', { name: '인터뷰 시작' })
+
+    await userEvent.setup().click(screen.getByRole('link', { name: '계정' }))
+
+    expect(await screen.findByRole('heading', { name: '비밀번호 변경' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/account/password')
+  })
+
+  it('keeps the mock participant authenticated and returns home after changing a password', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: false })
+    renderCompleteRoutes(api, '/account/password')
+    await screen.findByRole('heading', { name: '비밀번호 변경' })
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText('현재 비밀번호'), 'research123!')
+    await user.type(screen.getByLabelText('새 비밀번호'), 'changed-password!')
+    await user.type(screen.getByLabelText('새 비밀번호 확인'), 'changed-password!')
+    await user.click(screen.getByRole('button', { name: '변경' }))
+
+    expect(await screen.findByRole('heading', { name: '인터뷰 시작' })).toBeInTheDocument()
+    expect(screen.getByText('participant01')).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
+    await expect(api.getCurrentUser()).resolves.toMatchObject({ username: 'participant01' })
+  })
+
   it('renders an admin interview detail route directly', async () => {
     const api = new MockAppApi()
     await api.login({ username: 'admin', password: 'research123!', remember: false })
@@ -356,6 +397,37 @@ describe('complete application route tree', () => {
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
     expect(screen.getByTestId('location-path')).toHaveTextContent('/login')
     expect(await api.getCurrentUser()).toBeNull()
+  })
+
+  it('expires the route session when an authorized request returns 401', async () => {
+    const api = new DeferredRoutePageApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: false })
+    renderCompleteRoutes(api, '/interview')
+    expect(await screen.findByText('인터뷰 시작')).toHaveAttribute('role', 'status')
+    expect(api.currentInterviewRequests).toHaveLength(1)
+
+    await act(async () => {
+      api.currentInterviewRequests[0].reject(new ApiError(401, 'Session expired'))
+    })
+
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/login')
+  })
+
+  it('keeps the route session and shows an explicit permission error for 403', async () => {
+    const api = new DeferredRoutePageApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: false })
+    renderCompleteRoutes(api, '/interview')
+    expect(await screen.findByText('인터뷰 시작')).toHaveAttribute('role', 'status')
+    expect(api.currentInterviewRequests).toHaveLength(1)
+
+    await act(async () => {
+      api.currentInterviewRequests[0].reject(new ApiError(403, 'Participant access required'))
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('이 인터뷰에 접근할 권한이 없습니다')
+    expect(screen.getByText('participant01')).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
   })
 
   it('restores a remembered participant through StrictMode and a fresh API instance', async () => {
@@ -460,6 +532,43 @@ describe('role-protected routes', () => {
 
     expect(await screen.findByText('Login')).toBeInTheDocument()
     expect(await api.getCurrentUser()).toBeNull()
+  })
+
+  it.each([
+    { entry: '/interview', user: participant },
+    { entry: '/admin', user: admin },
+  ])('keeps a maximum-length identity bounded beside a non-shrinking logout action on $entry', async ({ entry, user }) => {
+    const api = new DeferredAppApi()
+    const username = 'u'.repeat(64)
+    renderRoutes(api, entry)
+    await resolveInitialUser(api, { ...user, username }, username)
+
+    const usernameElement = screen.getByText(username)
+    const identityGroup = usernameElement.parentElement
+    const logout = screen.getByRole('button', { name: '로그아웃' })
+
+    expect(identityGroup).toHaveClass('min-w-0', 'max-w-full')
+    expect(usernameElement).toHaveClass('min-w-0', 'truncate')
+    expect(usernameElement).toHaveAttribute('title', username)
+    expect(logout).toHaveClass('shrink-0')
+  })
+
+  it.each([
+    { entry: '/interview', user: participant },
+    { entry: '/admin', user: admin },
+  ])('disables the $entry logout action while the shared request is pending', async ({ entry, user: currentUser }) => {
+    const api = new DeferredAppApi()
+    renderRoutes(api, entry)
+    await resolveInitialUser(api, currentUser, currentUser.username)
+
+    const logout = screen.getByRole('button', { name: '로그아웃' })
+    await userEvent.setup().click(logout)
+
+    expect(logout).toBeDisabled()
+    expect(logout).toHaveAttribute('aria-busy', 'true')
+    await act(async () => {
+      api.logoutRequests[0].resolve()
+    })
   })
 
   it.each([
@@ -612,19 +721,45 @@ describe('session operation ordering', () => {
 
     expect(onRender).toHaveBeenCalledTimes(rendersBeforeUnmount)
   })
+
+  it('serializes rapid logout calls when a second transport call would fail', async () => {
+    const api = new FirstSuccessSecondFailureLogoutApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: false })
+    let session!: ReturnType<typeof useSession>
+    renderSession(api, undefined, (currentSession) => {
+      session = currentSession
+    })
+    expect(await screen.findByText('authenticated:participant01')).toBeInTheDocument()
+
+    const first = session.logout()
+    const second = session.logout()
+    const results = await Promise.allSettled([first, second])
+
+    expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled'])
+    expect(api.logoutCalls).toBe(1)
+    expect(await screen.findByText('guest:guest')).toBeInTheDocument()
+  })
 })
 
 describe('session rejection handling', () => {
-  it('handles an initial restore failure as a guest session', async () => {
+  it('keeps a retryable initial restore failure distinct and retries it', async () => {
     const api = new DeferredAppApi()
     renderSession(api)
 
     await act(async () => {
-      api.currentUserRequests[0].reject(new Error('restore failed'))
+      api.currentUserRequests[0].reject(new ApiError(503, 'Restore unavailable'))
     })
 
-    expect(await screen.findByText('guest:guest')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('세션을 확인하지 못했습니다')
     expect(screen.queryByText('불러오는 중')).not.toBeInTheDocument()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(screen.getByRole('status')).toHaveTextContent('불러오는 중')
+    await act(async () => {
+      api.currentUserRequests[1].resolve(participant)
+    })
+
+    expect(await screen.findByText('authenticated:participant01')).toBeInTheDocument()
   })
 
   it('keeps the latest login after a stale refresh rejects', async () => {

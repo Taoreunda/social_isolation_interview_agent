@@ -5,11 +5,12 @@ import type {
   InterviewDetail,
   InterviewListItem,
   LoginInput,
+  ParticipantInterview,
   ParticipantRecord,
   PasswordResult,
   ReviewScorecardInput,
-  ScoreDecision,
 } from '../app/contracts'
+import { ApiError } from '../app/api-error'
 import {
   createMockFixtureState,
   type MockAccountFixture,
@@ -19,16 +20,9 @@ import {
 
 const CURRENT_MOCK_USER_KEY = 'dabom.mock-user'
 
-export class ApiError extends Error {
-  constructor(public readonly status: number, message: string) {
-    super(message)
-    this.name = 'ApiError'
-  }
-}
-
 export class MockAppApi implements AppApi {
   private readonly state: MockFixtureState
-  private readonly committedTurns = new Map<string, InterviewDetail>()
+  private readonly committedTurns = new Map<string, ParticipantInterview>()
   private currentUserId: string | null = null
 
   constructor(state: MockFixtureState = createMockFixtureState()) {
@@ -62,22 +56,22 @@ export class MockAppApi implements AppApi {
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
     const account = this.requireCurrentAccount()
-    if (!await this.matchesPassword(account, currentPassword)) throw new ApiError(401, 'Invalid credentials')
+    if (!await this.matchesPassword(account, currentPassword)) throw new ApiError(400, 'Invalid current password')
     account.passwordVerifier = await this.passwordVerifier(newPassword)
   }
 
-  async getCurrentInterview(): Promise<InterviewDetail> {
+  async getCurrentInterview(): Promise<ParticipantInterview> {
     const account = this.requireParticipant()
     const interview = this.state.interviews.find((candidate) => candidate.participantId === account.id)
     if (!interview) throw new ApiError(404, 'Interview not found')
-    return this.clone(interview)
+    return this.toParticipantInterview(interview)
   }
 
   async sendMessage(
     interviewId: string,
     clientTurnId: string,
     content: string,
-  ): Promise<InterviewDetail> {
+  ): Promise<ParticipantInterview> {
     const account = this.requireParticipant()
     const interview = this.findInterview(interviewId)
     if (interview.participantId !== account.id) throw new ApiError(403, 'Interview is not available')
@@ -103,7 +97,7 @@ export class MockAppApi implements AppApi {
       },
     )
     interview.updatedAt = createdAt
-    const response = this.clone(interview)
+    const response = this.toParticipantInterview(interview)
     this.committedTurns.set(turnKey, response)
     return this.clone(response)
   }
@@ -178,10 +172,11 @@ export class MockAppApi implements AppApi {
       row.expertStatus = input.expertStatus
       row.expertRationale = input.rationale
     } else {
-      row.expertStatus = this.approvedStatus(row.aiStatus)
+      if (row.aiStatus === null) throw new ApiError(400, 'AI decision is required for approval')
+      row.expertStatus = row.aiStatus
       row.expertRationale = input.rationale ?? null
     }
-    interview.reviewStatus = 'reviewed'
+    interview.reviewStatus = this.reviewStatus(interview)
     return this.clone(interview)
   }
 
@@ -287,8 +282,20 @@ export class MockAppApi implements AppApi {
     }
   }
 
-  private approvedStatus(aiStatus: ScoreDecision | null): ScoreDecision | null {
-    return aiStatus === 'positive' || aiStatus === 'negative' ? aiStatus : null
+  private toParticipantInterview(interview: MockInterviewFixture): ParticipantInterview {
+    return this.clone({
+      id: interview.id,
+      status: interview.status,
+      progress: interview.progress,
+      updatedAt: interview.updatedAt,
+      messages: interview.messages,
+    })
+  }
+
+  private reviewStatus(interview: MockInterviewFixture): InterviewListItem['reviewStatus'] {
+    const reviewedRows = interview.scorecard.filter((row) => row.expertStatus !== null).length
+    if (reviewedRows === 0) return 'unreviewed'
+    return reviewedRows === interview.scorecard.length ? 'reviewed' : 'in_review'
   }
 
   private turnKey(interviewId: string, clientTurnId: string): string {

@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { renderHook } from '@testing-library/react'
 
 import { ApiProvider, useApi } from '../app/api-context'
+import { ApiError } from '../app/api-error'
 import { createMockFixtureState } from './fixtures'
-import { ApiError, MockAppApi } from './mock-api'
+import { MockAppApi } from './mock-api'
 
 const participantLogin = {
   username: 'participant01',
@@ -127,6 +128,33 @@ describe('MockAppApi', () => {
       role: 'user',
       content: '요즘 혼자 지내는 시간이 많아요.',
     })
+  })
+
+  it('returns participant interview data without administrator-only fields', async () => {
+    const api = new MockAppApi()
+    await api.login(participantLogin)
+
+    const current = await api.getCurrentInterview()
+    const committed = await api.sendMessage(current.id, 'participant-safe-turn', '참여자 응답')
+
+    expect(current).toEqual({
+      id: 'interview-001',
+      status: 'active',
+      progress: 50,
+      updatedAt: '2026-08-25T09:00:00.000Z',
+      messages: [{
+        id: 'message-001',
+        role: 'assistant',
+        content: '안녕하세요. 최근 한 달간 일상을 이야기해 주세요.',
+        createdAt: '2026-08-25T09:00:00.000Z',
+      }],
+    })
+    for (const result of [current, committed]) {
+      expect(result).not.toHaveProperty('participantCode')
+      expect(result).not.toHaveProperty('reviewStatus')
+      expect(result).not.toHaveProperty('scorecard')
+      expect(result).not.toHaveProperty('participantId')
+    }
   })
 
   it('rejects a cached turn retry after logout and administrator login', async () => {
@@ -291,7 +319,7 @@ describe('MockAppApi', () => {
     await expect(api.listInterviews()).rejects.toMatchObject({ status: 403 })
   })
 
-  it('updates a scorecard review in the administrator fixture', async () => {
+  it('derives review state across every row and approves recorded decisions', async () => {
     const api = new MockAppApi()
     await api.login(adminLogin)
     const interview = await api.getInterview('interview-001')
@@ -304,11 +332,49 @@ describe('MockAppApi', () => {
       rationale: '전문가 재검토',
     })
 
-    expect(reviewed.reviewStatus).toBe('reviewed')
+    expect(reviewed.reviewStatus).toBe('in_review')
     expect(reviewed.scorecard.find((row) => row.questionId === 'q1')).toMatchObject({
       expertStatus: 'negative',
       expertRationale: '전문가 재검토',
     })
+
+    const completed = await api.reviewScorecard({
+      interviewId: interview.id,
+      questionId: 'q2',
+      action: 'approve',
+    })
+
+    expect(completed.reviewStatus).toBe('reviewed')
+    expect(completed.scorecard.find((row) => row.questionId === 'q2')).toMatchObject({
+      aiStatus: 'recorded',
+      expertStatus: 'recorded',
+    })
+    expect((await api.listInterviews())[0].reviewStatus).toBe('reviewed')
+  })
+
+  it('rejects approval when a scorecard row has no AI decision', async () => {
+    const seed = createMockFixtureState()
+    seed.interviews[0].scorecard.push({
+      questionId: 'q3',
+      question: 'AI 판정이 없는 문항',
+      value: null,
+      rationale: null,
+      aiStatus: null,
+      expertStatus: null,
+      expertRationale: null,
+    })
+    const api = new MockAppApi(seed)
+    await api.login(adminLogin)
+
+    await expect(api.reviewScorecard({
+      interviewId: 'interview-001',
+      questionId: 'q3',
+      action: 'approve',
+    })).rejects.toMatchObject({ status: 400 })
+
+    const unchanged = await api.getInterview('interview-001')
+    expect(unchanged.reviewStatus).toBe('unreviewed')
+    expect(unchanged.scorecard.find((row) => row.questionId === 'q3')?.expertStatus).toBeNull()
   })
 
   it('exports a deterministic interview CSV blob', async () => {

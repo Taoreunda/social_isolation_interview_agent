@@ -60,9 +60,15 @@ export function Chat({
             value={answer}
           />
         </div>
-        <Button aria-busy={isSending} aria-label={submitLabel} disabled={isSending} size="icon" type="submit">
+        <Button
+          aria-busy={isSending}
+          aria-label={submitLabel}
+          disabled={isSending}
+          size={retrying ? 'default' : 'icon'}
+          type="submit"
+        >
           <Send aria-hidden="true" />
-          <span className="sr-only">{submitLabel}</span>
+          <span className={retrying ? undefined : 'sr-only'}>{submitLabel}</span>
         </Button>
       </form>}
     </>

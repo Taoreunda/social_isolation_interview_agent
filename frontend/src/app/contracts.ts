@@ -66,6 +66,14 @@ export interface InterviewDetail extends InterviewListItem {
   scorecard: ScorecardRow[]
 }
 
+export interface ParticipantInterview {
+  id: string
+  status: InterviewStatus
+  progress: number
+  updatedAt: string
+  messages: InterviewMessage[]
+}
+
 export interface ReviewScorecardInput {
   interviewId: string
   questionId: string
@@ -79,8 +87,8 @@ export interface AppApi {
   logout(): Promise<void>
   getCurrentUser(): Promise<CurrentUser | null>
   changePassword(currentPassword: string, newPassword: string): Promise<void>
-  getCurrentInterview(): Promise<InterviewDetail>
-  sendMessage(interviewId: string, clientTurnId: string, content: string): Promise<InterviewDetail>
+  getCurrentInterview(): Promise<ParticipantInterview>
+  sendMessage(interviewId: string, clientTurnId: string, content: string): Promise<ParticipantInterview>
   listParticipants(): Promise<ParticipantRecord[]>
   createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord>
   resetParticipantPassword(participantId: string): Promise<PasswordResult>

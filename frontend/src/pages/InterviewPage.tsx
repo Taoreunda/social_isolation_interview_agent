@@ -2,7 +2,8 @@ import { AlertCircle, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useApi } from '@/app/api-context'
-import type { InterviewDetail } from '@/app/contracts'
+import { hasApiStatus } from '@/app/api-error'
+import type { ParticipantInterview } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { Chat } from '@/features/interview/Chat'
 
@@ -13,14 +14,15 @@ interface PendingTurn {
   content: string
 }
 
-function phaseFor(interview: InterviewDetail): InterviewPhase {
+function phaseFor(interview: ParticipantInterview): InterviewPhase {
   return interview.status === 'completed' ? 'completed' : 'active'
 }
 
 export function InterviewPage() {
   const api = useApi()
   const [answer, setAnswer] = useState('')
-  const [interview, setInterview] = useState<InterviewDetail | null>(null)
+  const [interview, setInterview] = useState<ParticipantInterview | null>(null)
+  const [loadError, setLoadError] = useState('인터뷰를 불러오지 못했습니다')
   const [phase, setPhase] = useState<InterviewPhase>('loading')
   const mounted = useRef(false)
   const requestGeneration = useRef(0)
@@ -30,13 +32,15 @@ export function InterviewPage() {
   const loadInterview = useCallback(async (): Promise<void> => {
     const operation = ++requestGeneration.current
     setPhase('loading')
+    setLoadError('인터뷰를 불러오지 못했습니다')
     try {
       const detail = await api.getCurrentInterview()
       if (!mounted.current || operation !== requestGeneration.current) return
       setInterview(detail)
       setPhase(phaseFor(detail))
-    } catch {
+    } catch (error) {
       if (!mounted.current || operation !== requestGeneration.current) return
+      if (hasApiStatus(error, 403)) setLoadError('이 인터뷰에 접근할 권한이 없습니다')
       setPhase('load_error')
     }
   }, [api])
@@ -87,7 +91,7 @@ export function InterviewPage() {
   if (phase === 'load_error') {
     return (
       <main className="mx-auto w-full max-w-3xl px-4 py-6">
-        <p className="inline-flex items-center gap-2" role="alert"><AlertCircle aria-hidden="true" className="size-4" />인터뷰를 불러오지 못했습니다</p>
+        <p className="inline-flex items-center gap-2" role="alert"><AlertCircle aria-hidden="true" className="size-4" />{loadError}</p>
         <Button className="mt-4" onClick={() => void loadInterview()} type="button">
           <RefreshCw aria-hidden="true" />
           다시 시도
