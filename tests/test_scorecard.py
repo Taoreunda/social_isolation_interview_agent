@@ -5,11 +5,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+BACKEND = Path(__file__).resolve().parents[1] / "backend"
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
 
-from interview.scorecard import Scorecard
+from interview.scorecard import Scorecard, calculate_with_overrides
 
 
 def make_scorecard(**statuses) -> Scorecard:
@@ -286,6 +286,82 @@ def test_a_criteria_a3_negative():
     sc = make_scorecard(A1="positive", A2="positive", A3="negative")
     sc.calculate()
     assert sc.criteria["A"] is False
+
+
+# ------------------------------------------------------------------
+# calculate_with_overrides
+# ------------------------------------------------------------------
+
+
+def test_overrides_no_change():
+    """전문가가 동의만 한 경우 → 원본과 동일한 결과."""
+    sc = make_scorecard(
+        A1="positive", A2="positive", A3="positive",
+        B1="positive", B2="positive",
+        C1="positive", C2="positive",
+        D1="positive", D1_duration="positive",
+        D2="negative",
+        E1="recorded", E2="recorded",
+    )
+    sc.calculate()
+    result = calculate_with_overrides(sc.to_dict(), {})
+    assert result["diagnosis"] == "히키코모리"
+    assert result["criteria"]["A"] is True
+
+
+def test_overrides_flip_to_social_isolation():
+    """전문가가 A3를 negative로 변경 → 히키코모리에서 사회적 고립으로."""
+    sc = make_scorecard(
+        A1="positive", A2="positive", A3="positive",
+        B1="positive", B2="positive",
+        C1="positive", C2="positive",
+        D1="positive", D1_duration="positive",
+        D2="negative",
+        E1="recorded", E2="recorded",
+    )
+    sc.calculate()
+    assert sc.diagnosis == "히키코모리"
+
+    expert_reviews = {"A3": {"expert_status": "negative"}}
+    result = calculate_with_overrides(sc.to_dict(), expert_reviews)
+    assert result["criteria"]["A"] is False
+    assert result["diagnosis"] == "사회적 고립"
+
+
+def test_overrides_flip_to_general():
+    """전문가가 B1을 negative로 변경 → 사회적 고립에서 일반으로."""
+    sc = make_scorecard(
+        A1="negative", A2="negative", A3="negative",
+        B1="positive", B2="positive",
+        C1="positive", C2="positive",
+        D1="positive", D1_duration="positive",
+        D2="negative",
+        E1="recorded", E2="recorded",
+    )
+    sc.calculate()
+    assert sc.diagnosis == "사회적 고립"
+
+    expert_reviews = {"B1": {"expert_status": "negative"}}
+    result = calculate_with_overrides(sc.to_dict(), expert_reviews)
+    assert result["criteria"]["B"] is False
+    assert result["diagnosis"] == "일반"
+
+
+def test_overrides_early_stop():
+    """전문가 변경으로 A/B/C 모두 비충족 → early_stop."""
+    sc = make_scorecard(
+        A1="positive", A2="negative", A3="positive",
+        B1="negative", B2="negative",
+        C1="negative", C2="negative",
+    )
+    sc.calculate()
+    assert sc.criteria["A"] is True
+
+    expert_reviews = {"A1": {"expert_status": "negative"}}
+    result = calculate_with_overrides(sc.to_dict(), expert_reviews)
+    assert result["criteria"]["A"] is False
+    assert result["early_stop"] is True
+    assert result["diagnosis"] == "일반"
 
 
 def run_all():

@@ -9,9 +9,9 @@ import sys
 from types import MethodType
 from typing import Dict, List
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+BACKEND = Path(__file__).resolve().parents[1] / "backend"
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
 
 from interview.engine import InterviewEngine
 from interview.scorecard import Scorecard

@@ -6,6 +6,10 @@ dist/
 wheels/
 *.egg-info
 
+# Frontend (Node/Vite)
+node_modules/
+*.tsbuildinfo
+
 # Virtual environments
 .venv
 
@@ -16,9 +20,9 @@ wheels/
 .DS_Store
 .vscode/
 .claude/
-.streamlit/secrets.toml
-!.streamlit/
-!.streamlit/secrets.example.toml
+.playwright-mcp/
+.worktrees/
+.superpowers/
 
 # Runtime artifacts
 logs/*.json
@@ -26,23 +30,6 @@ data/interviews/
 data/results/*.json
 *.log
 
-# Documentation and development files
-AGENT.md
-AGENTS.md
-blueprint.md
-PRD.md
-claude.md
-CLAUDE.md
-
-# folders
+# Local data and research source material
 data/
 references/
-tests/
-
-# Large files for deployment
-uv.lock
-*.md
-!README.md
-!DEPLOY_GUIDE.md
-deploy*.sh
-QUICK_DEPLOY.md
