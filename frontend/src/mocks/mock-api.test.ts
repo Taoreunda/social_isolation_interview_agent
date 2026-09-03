@@ -321,8 +321,8 @@ describe('MockAppApi', () => {
     expect(second).toBe(first)
     expect(first).toBe(
       'interviewId,participantCode,status,progress,reviewStatus,questionId,question,value,aiStatus,expertStatus,expertRationale\n' +
-      'interview-001,P-001,completed,100,unreviewed,q1,최근 한 달간 혼자 지내는 시간이 얼마나 되었나요?,하루 대부분,positive,,\n' +
-      'interview-001,P-001,completed,100,unreviewed,q2,도움을 요청할 수 있는 사람이 있나요?,한 명 있습니다,recorded,,'
+      'interview-001,P-001,active,50,unreviewed,q1,최근 한 달간 혼자 지내는 시간이 얼마나 되었나요?,하루 대부분,positive,,\n' +
+      'interview-001,P-001,active,50,unreviewed,q2,도움을 요청할 수 있는 사람이 있나요?,한 명 있습니다,recorded,,'
     )
   })
 })

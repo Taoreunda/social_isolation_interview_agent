@@ -146,7 +146,7 @@ describe('ParticipantsPage', () => {
 
     const row = await screen.findByRole('row', { name: /P-001.*participant01/i })
     expect(within(row).getByText('활성')).toBeInTheDocument()
-    expect(within(row).getByText('완료')).toBeInTheDocument()
+    expect(within(row).getByText('진행 중')).toBeInTheDocument()
   })
 
   it('filters rows by code or username', async () => {

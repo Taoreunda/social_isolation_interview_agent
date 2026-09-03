@@ -1,7 +1,6 @@
 import type {
   AccountStatus,
   InterviewDetail,
-  InterviewStatus,
   Role,
 } from '../app/contracts'
 
@@ -46,14 +45,12 @@ const adminAccount: MockAccountFixture = {
   status: 'active',
 }
 
-const completed: InterviewStatus = 'completed'
-
 const participantInterview: MockInterviewFixture = {
   id: 'interview-001',
   participantId: participantAccount.id,
   participantCode: 'P-001',
-  status: completed,
-  progress: 100,
+  status: 'active',
+  progress: 50,
   reviewStatus: 'unreviewed',
   updatedAt: '2026-08-25T09:00:00.000Z',
   messages: [

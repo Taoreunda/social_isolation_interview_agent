@@ -227,7 +227,9 @@ describe('complete application route tree', () => {
 
     renderCompleteRoutes(api, '/')
 
-    expect(await screen.findByRole('heading', { name: '완료했습니다' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '인터뷰 시작' })).toBeInTheDocument()
+    expect(screen.getByLabelText('답변 입력')).toBeEnabled()
+    expect(screen.getByRole('progressbar', { name: '진행률' })).toHaveAttribute('aria-valuenow', '50')
     expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
   })
 
@@ -242,8 +244,8 @@ describe('complete application route tree', () => {
   })
 
   it.each([
-    { role: 'participant', entry: '/admin/participants', expectedPath: '/interview', heading: '완료했습니다' },
-    { role: 'participant', entry: '/admin/interviews/interview-001', expectedPath: '/interview', heading: '완료했습니다' },
+    { role: 'participant', entry: '/admin/participants', expectedPath: '/interview', heading: '인터뷰 시작' },
+    { role: 'participant', entry: '/admin/interviews/interview-001', expectedPath: '/interview', heading: '인터뷰 시작' },
     { role: 'admin', entry: '/interview', expectedPath: '/admin', heading: '검토' },
     { role: 'admin', entry: '/account/password', expectedPath: '/admin', heading: '검토' },
   ])('redirects a $role away from the cross-role route $entry', async ({ role, entry, expectedPath, heading }) => {
@@ -284,7 +286,7 @@ describe('complete application route tree', () => {
     const api = new MockAppApi()
     await api.login({ username: 'participant01', password: 'research123!', remember: true })
     renderCompleteRoutes(api, '/interview')
-    await screen.findByRole('heading', { name: '완료했습니다' })
+    await screen.findByRole('heading', { name: '인터뷰 시작' })
 
     await userEvent.setup().click(screen.getByRole('button', { name: '로그아웃' }))
 
@@ -298,12 +300,12 @@ describe('complete application route tree', () => {
     await api.login({ username: 'participant01', password: 'research123!', remember: true })
     const firstMount = renderCompleteRoutes(api, '/interview', true)
 
-    expect(await screen.findByRole('heading', { name: '완료했습니다' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '인터뷰 시작' })).toBeInTheDocument()
     firstMount.unmount()
 
     renderCompleteRoutes(new MockAppApi(), '/missing-after-remount', true)
 
-    expect(await screen.findByRole('heading', { name: '완료했습니다' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '인터뷰 시작' })).toBeInTheDocument()
     expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
   })
 
