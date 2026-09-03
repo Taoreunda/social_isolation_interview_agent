@@ -1,0 +1,42 @@
+import { ClipboardList, LogOut, Users } from 'lucide-react'
+import { NavLink, Outlet } from 'react-router-dom'
+
+import { Button } from '@/components/ui/button'
+import { useSession } from '@/app/session-context'
+
+const navigation = [
+  { to: '/admin', label: '검토', icon: ClipboardList },
+  { to: '/admin/participants', label: '참여자', icon: Users },
+]
+
+export function AdminLayout() {
+  const { user, logout } = useSession()
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+        <NavLink className="font-semibold text-foreground no-underline" to="/admin">Dabom</NavLink>
+        <nav aria-label="관리자 탐색" className="order-3 flex w-full items-center gap-1 sm:order-none sm:w-auto">
+          {navigation.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"
+              key={to}
+              to={to}
+            >
+              <Icon aria-hidden="true" className="size-4" />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="ml-auto flex items-center gap-2 text-sm">
+          <span>{user?.username}</span>
+          <Button onClick={() => void logout()} size="sm" variant="outline">
+            <LogOut aria-hidden="true" />
+            로그아웃
+          </Button>
+        </div>
+      </header>
+      <main className="flex-1"><Outlet /></main>
+    </div>
+  )
+}

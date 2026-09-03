@@ -1,0 +1,20 @@
+import type { ReactNode } from 'react'
+import { Navigate } from 'react-router-dom'
+
+import type { Role } from './contracts'
+import { useSession } from './session-context'
+
+function homeFor(role: Role): string {
+  return role === 'admin' ? '/admin' : '/interview'
+}
+
+export function RequireGuest({ children }: { children: ReactNode }) {
+  const { user } = useSession()
+  return user ? <Navigate to={homeFor(user.role)} replace /> : children
+}
+
+export function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
+  const { user } = useSession()
+  if (!user) return <Navigate to="/login" replace />
+  return user.role === role ? children : <Navigate to={homeFor(user.role)} replace />
+}
