@@ -118,6 +118,16 @@ describe('administrator interview review', () => {
     expect(screen.getByText('전문가:').className).toContain('sm:hidden')
   })
 
+  it('fully restores both table heads at desktop widths', async () => {
+    const api = createApi()
+    renderDashboard(api)
+    const queueHead = await screen.findByRole('columnheader', { name: '수정 시각' })
+    expect(queueHead.closest('thead')).toHaveClass('sm:not-sr-only')
+    renderReview(api)
+    const scorecardHead = await screen.findByRole('columnheader', { name: 'AI 판정' })
+    expect(scorecardHead.closest('thead')).toHaveClass('sm:not-sr-only')
+  })
+
   it('shows participant code rather than personal identity', async () => {
     const api = createApi()
     renderReview(api)
