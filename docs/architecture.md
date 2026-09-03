@@ -240,6 +240,18 @@ The React/Vite application adopts shadcn/ui components and route-based shells:
 - `/admin/participants`
 - `/admin/interviews/:interviewId`
 
+The visual system uses exactly three base color codes:
+
+- ink: `#17233C`
+- surface: `#F6F4EE`
+- accent: `#2F6F68`
+
+Borders, hover states, and muted surfaces may use opacity derived from these
+tokens, but no additional hex, RGB, or HSL color literals. Status is never
+communicated by color alone. UI copy uses short titles, field labels, actions,
+and state messages; explanatory cards, promotional copy, decorative gradients,
+and redundant helper paragraphs are excluded.
+
 The current `#user`/`#reviewer` tab switch is removed. The participant shell
 contains only interview-related actions. The administrator shell contains
 participant management, interview review, and export navigation. Both shells
