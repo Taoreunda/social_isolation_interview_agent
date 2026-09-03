@@ -75,7 +75,7 @@ export interface ReviewScorecardInput {
 }
 
 export interface AppApi {
-  login(input: LoginInput): Promise<CurrentUser>
+  login(input: LoginInput, signal?: AbortSignal): Promise<CurrentUser>
   logout(): Promise<void>
   getCurrentUser(): Promise<CurrentUser | null>
   changePassword(currentPassword: string, newPassword: string): Promise<void>

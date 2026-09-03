@@ -48,7 +48,7 @@ describe('MockAppApi', () => {
     installBrowserStorage()
   })
 
-  it('logs in the participant and admin fixtures', async () => {
+  it('logs in the participant and admin fixtures with one-argument calls', async () => {
     const participantApi = new MockAppApi()
     const participant = await participantApi.login(participantLogin)
     const adminApi = new MockAppApi()
@@ -64,6 +64,25 @@ describe('MockAppApi', () => {
       role: 'admin',
       participantCode: null,
     })
+  })
+
+  it('aborts login before and after the mock transport boundary without storing identity', async () => {
+    const beforeApi = new MockAppApi()
+    const before = new AbortController()
+    before.abort()
+
+    await expect(beforeApi.login(participantLogin, before.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(await beforeApi.getCurrentUser()).toBeNull()
+    expect(window.sessionStorage.length).toBe(0)
+
+    const afterApi = new MockAppApi()
+    const after = new AbortController()
+    const pending = afterApi.login(participantLogin, after.signal)
+    after.abort()
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(await afterApi.getCurrentUser()).toBeNull()
+    expect(window.sessionStorage.length).toBe(0)
   })
 
   it('stores only the current mock user in the selected browser storage', async () => {

@@ -35,7 +35,8 @@ export class MockAppApi implements AppApi {
     this.state = this.clone(state)
   }
 
-  async login(input: LoginInput): Promise<CurrentUser> {
+  async login(input: LoginInput, signal?: AbortSignal): Promise<CurrentUser> {
+    this.throwIfAborted(signal)
     const account = this.state.accounts.find((candidate) =>
       candidate.username === input.username && candidate.password === input.password,
     )
@@ -43,6 +44,8 @@ export class MockAppApi implements AppApi {
       throw new ApiError(401, 'Invalid credentials')
     }
 
+    await Promise.resolve()
+    this.throwIfAborted(signal)
     this.currentUserId = account.id
     this.storeCurrentUser(account.id, input.remember)
     return this.toCurrentUser(account)
@@ -292,6 +295,10 @@ export class MockAppApi implements AppApi {
 
   private turnKey(interviewId: string, clientTurnId: string): string {
     return JSON.stringify([interviewId, clientTurnId])
+  }
+
+  private throwIfAborted(signal: AbortSignal | undefined): void {
+    if (signal?.aborted) throw new DOMException('Login aborted', 'AbortError')
   }
 
   private csvValue(value: string | number | null): string {

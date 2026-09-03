@@ -84,13 +84,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     signal?.addEventListener('abort', cancel, { once: true })
 
     try {
-      const currentUser = await api.login(input)
+      const currentUser = await api.login(input, signal)
       if (canceled) {
-        try {
-          await api.logout()
-        } catch {
-          // A canceled login must not turn cleanup failure into an unhandled rejection.
-        }
         return currentUser
       }
       synchronize(operation, currentUser)

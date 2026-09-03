@@ -55,24 +55,26 @@ class AccountScreenApi extends MockAppApi {
 }
 
 class DeferredPersistentLoginApi extends MockAppApi {
-  private input: LoginInput | null = null
-  private resolveRequest: ((user: CurrentUser) => void) | null = null
-  private rejectRequest: ((reason: unknown) => void) | null = null
+  readonly loginRequests: Array<{
+    input: LoginInput
+    signal: AbortSignal | undefined
+    resolve: (user: CurrentUser) => void
+    reject: (reason: unknown) => void
+  }> = []
 
-  override login(input: LoginInput): Promise<CurrentUser> {
-    this.input = input
+  override login(input: LoginInput, signal?: AbortSignal): Promise<CurrentUser> {
     return new Promise((resolve, reject) => {
-      this.resolveRequest = resolve
-      this.rejectRequest = reject
+      this.loginRequests.push({ input, signal, resolve, reject })
     })
   }
 
-  async resolveLogin(): Promise<void> {
-    if (!this.input || !this.resolveRequest) throw new Error('No login request to resolve')
+  async resolveLogin(index = 0): Promise<void> {
+    const request = this.loginRequests[index]
+    if (!request) throw new Error('No login request to resolve')
     try {
-      this.resolveRequest(await super.login(this.input))
+      request.resolve(await super.login(request.input, request.signal))
     } catch (error) {
-      this.rejectRequest?.(error)
+      request.reject(error)
     }
   }
 }
@@ -106,6 +108,12 @@ function Location() {
 function SessionState() {
   const { status, user } = useSession()
   return <p data-testid="session-state">{`${status}:${user?.username ?? 'guest'}`}</p>
+}
+
+function SessionProbe({ onSession }: { onSession: (session: ReturnType<typeof useSession>) => void }) {
+  const session = useSession()
+  onSession(session)
+  return <p>{`${session.status}:${session.user?.username ?? 'guest'}`}</p>
 }
 
 function LeaveLoginPage() {
@@ -186,10 +194,14 @@ function renderGuardedLogin(api: AppApi) {
   )
 }
 
-function participantCredentials(): LoginInput {
-  const account = createMockFixtureState().accounts.find((item) => item.role === 'participant')
-  if (!account) throw new Error('Participant fixture is required')
+function fixtureLogin(role: 'participant' | 'admin'): LoginInput {
+  const account = createMockFixtureState().accounts.find((item) => item.role === role)
+  if (!account) throw new Error(`${role} fixture is required`)
   return { username: account.username, password: account.password, remember: false }
+}
+
+function participantCredentials(): LoginInput {
+  return fixtureLogin('participant')
 }
 
 async function fillLogin(user: ReturnType<typeof userEvent.setup>) {
@@ -385,6 +397,44 @@ describe('LoginPage', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/else')
     expect(screen.getByTestId('session-state')).toHaveTextContent('guest:guest')
     expect(await api.getCurrentUser()).toBeNull()
+  })
+
+  it('keeps login B authenticated and persisted after abandoned login A settles', async () => {
+    const api = new DeferredPersistentLoginApi()
+    let session!: ReturnType<typeof useSession>
+    render(
+      <ApiProvider api={api}>
+        <SessionProvider>
+          <SessionProbe onSession={(value) => { session = value }} />
+        </SessionProvider>
+      </ApiProvider>,
+    )
+    expect(await screen.findByText('guest:guest')).toBeInTheDocument()
+
+    const abandonedController = new AbortController()
+    const abandoned = session.login(fixtureLogin('participant'), abandonedController.signal)
+    const canceled = abandoned.then(
+      () => null,
+      (error: unknown) => error,
+    )
+    abandonedController.abort()
+    const active = session.login(fixtureLogin('admin'))
+    expect(api.loginRequests).toHaveLength(2)
+
+    await act(async () => {
+      await api.resolveLogin(1)
+    })
+    await expect(active).resolves.toMatchObject({ role: 'admin' })
+    expect(screen.getByText('authenticated:admin')).toBeInTheDocument()
+    expect(await api.getCurrentUser()).toMatchObject({ role: 'admin' })
+
+    await act(async () => {
+      await api.resolveLogin(0)
+    })
+    await expect(canceled).resolves.toMatchObject({ name: 'AbortError' })
+
+    expect(screen.getByText('authenticated:admin')).toBeInTheDocument()
+    expect(await api.getCurrentUser()).toMatchObject({ role: 'admin' })
   })
 })
 
