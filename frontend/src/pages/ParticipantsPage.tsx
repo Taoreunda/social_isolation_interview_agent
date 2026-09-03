@@ -60,6 +60,8 @@ export function ParticipantsPage() {
   const mounted = useRef(false)
   const operation = useRef(0)
   const disableInFlight = useRef(false)
+  const disableRequest = useRef(0)
+  const activeDisableRequest = useRef<number | null>(null)
 
   useEffect(() => {
     mounted.current = true
@@ -106,7 +108,9 @@ export function ParticipantsPage() {
   async function disableParticipant(): Promise<void> {
     if (!participantToDisable || disableInFlight.current) return
     const currentOperation = ++operation.current
+    const requestId = ++disableRequest.current
     disableInFlight.current = true
+    activeDisableRequest.current = requestId
     setDisableError(null)
     setIsDisabling(true)
     try {
@@ -119,8 +123,11 @@ export function ParticipantsPage() {
     } catch {
       if (mounted.current && currentOperation === operation.current) setDisableError('참여자를 비활성화하지 못했습니다')
     } finally {
-      disableInFlight.current = false
-      if (mounted.current && currentOperation === operation.current) setIsDisabling(false)
+      if (activeDisableRequest.current === requestId) {
+        activeDisableRequest.current = null
+        disableInFlight.current = false
+        if (mounted.current) setIsDisabling(false)
+      }
     }
   }
 

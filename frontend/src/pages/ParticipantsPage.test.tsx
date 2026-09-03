@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -64,6 +64,7 @@ function deferred<T>(): Deferred<T> {
 class DeferredParticipantApi extends MockAppApi {
   readonly createInputs: CreateParticipantInput[] = []
   readonly createRequests: Deferred<ParticipantRecord>[] = []
+  readonly disableRequests: Deferred<ParticipantRecord>[] = []
   readonly listRequests: Deferred<ParticipantRecord[]>[] = []
 
   override createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord> {
@@ -76,6 +77,12 @@ class DeferredParticipantApi extends MockAppApi {
   override listParticipants(): Promise<ParticipantRecord[]> {
     const request = deferred<ParticipantRecord[]>()
     this.listRequests.push(request)
+    return request.promise
+  }
+
+  override disableParticipant(): Promise<ParticipantRecord> {
+    const request = deferred<ParticipantRecord>()
+    this.disableRequests.push(request)
     return request.promise
   }
 }
@@ -249,6 +256,30 @@ describe('ParticipantsPage', () => {
     })
 
     expect(screen.queryByText('P-002')).not.toBeInTheDocument()
+  })
+
+  it('releases a dismissed disable request lock when that request settles', async () => {
+    const api = new DeferredParticipantApi()
+    renderWithApi(api)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: '참여자' })
+    await act(async () => {
+      api.listRequests[0].resolve([participant({ id: 'participant-001', participantCode: 'P-001', username: 'participant01' })])
+    })
+
+    await user.click(screen.getByRole('button', { name: '비활성화' }))
+    await user.click(screen.getByRole('button', { name: '비활성화' }))
+    expect(api.disableRequests).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await user.click(screen.getByRole('button', { name: '비활성화' }))
+    expect(screen.getByRole('button', { name: '비활성화' })).toBeDisabled()
+
+    await act(async () => {
+      api.disableRequests[0].resolve(participant({ id: 'participant-001', participantCode: 'P-001', username: 'participant01', status: 'disabled' }))
+    })
+    expect(screen.getByRole('button', { name: '비활성화' })).not.toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '비활성화' }))
+    expect(api.disableRequests).toHaveLength(2)
   })
 
 })
