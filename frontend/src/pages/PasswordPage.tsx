@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { useApi } from '@/app/api-context'
@@ -21,6 +21,17 @@ export function PasswordPage() {
   const [confirmation, setConfirmation] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const mounted = useRef(false)
+  const generation = useRef(0)
+  const inFlight = useRef(false)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      generation.current += 1
+    }
+  }, [])
 
   function returnHome(): void {
     navigate(homeFor(user?.role), { replace: true })
@@ -28,7 +39,7 @@ export function PasswordPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
-    if (isSubmitting) return
+    if (inFlight.current) return
 
     if (newPassword.length < 10 || newPassword.length > 128) {
       setError('새 비밀번호는 10~128자여야 합니다')
@@ -39,17 +50,23 @@ export function PasswordPage() {
       return
     }
 
+    const operation = ++generation.current
+    inFlight.current = true
     setError(null)
     setIsSubmitting(true)
     try {
       await api.changePassword(currentPassword, newPassword)
+      if (!mounted.current || operation !== generation.current) return
       navigate(homeFor(user?.role), {
         replace: true,
         state: { announcement: '변경했습니다' },
       })
     } catch {
+      if (!mounted.current || operation !== generation.current) return
       setError('변경에 실패했습니다')
     } finally {
+      if (!mounted.current || operation !== generation.current) return
+      inFlight.current = false
       setIsSubmitting(false)
     }
   }

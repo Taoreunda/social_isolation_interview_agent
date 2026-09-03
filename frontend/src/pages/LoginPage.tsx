@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
@@ -20,24 +20,41 @@ export function LoginPage() {
   const [remember, setRemember] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const mounted = useRef(false)
+  const generation = useRef(0)
+  const inFlight = useRef(false)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      generation.current += 1
+    }
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
-    if (isSubmitting) return
+    if (inFlight.current) return
 
     if (!username || !password) {
       setError('입력 내용을 확인하세요')
       return
     }
 
+    const operation = ++generation.current
+    inFlight.current = true
     setError(null)
     setIsSubmitting(true)
     try {
       const user = await login({ username, password, remember })
+      if (!mounted.current || operation !== generation.current) return
       navigate(homeFor(user.role), { replace: true })
     } catch {
+      if (!mounted.current || operation !== generation.current) return
       setError('로그인에 실패했습니다')
     } finally {
+      if (!mounted.current || operation !== generation.current) return
+      inFlight.current = false
       setIsSubmitting(false)
     }
   }

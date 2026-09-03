@@ -3,6 +3,7 @@ import { AlertCircle, ClipboardList, LogOut } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
+import { NavigationAnnouncement } from '@/app/navigation-announcement'
 import { useSession } from '@/app/session-context'
 
 export function ParticipantLayout() {
@@ -45,6 +46,7 @@ export function ParticipantLayout() {
           )}
         </div>
       </header>
+      <NavigationAnnouncement />
       <main className="flex-1"><Outlet /></main>
     </div>
   )

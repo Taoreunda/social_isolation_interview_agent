@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from './api-context'
@@ -227,6 +227,37 @@ describe('role-protected routes', () => {
 
     expect(await screen.findByText('Login')).toBeInTheDocument()
     expect(await api.getCurrentUser()).toBeNull()
+  })
+
+  it.each([
+    { entry: '/interview', user: participant, role: 'participant' as const },
+    { entry: '/admin', user: admin, role: 'admin' as const },
+  ])('announces a password change once in the $role layout', async ({ entry, user: currentUser, role }) => {
+    const api = new DeferredAppApi()
+    const next = role === 'admin' ? '/admin/next' : '/interview/next'
+    const Layout = role === 'admin' ? AdminLayout : ParticipantLayout
+
+    render(
+      <ApiProvider api={api}>
+        <SessionProvider>
+          <MemoryRouter initialEntries={[{ pathname: entry, state: { announcement: '변경했습니다' } }]}>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path={entry} element={<NavLink to={next}>next</NavLink>} />
+                <Route path={next} element={<p>next page</p>} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </SessionProvider>
+      </ApiProvider>,
+    )
+
+    await resolveInitialUser(api, currentUser, currentUser.username)
+    expect(await screen.findByText('변경했습니다')).toHaveAttribute('role', 'status')
+    await userEvent.setup().click(screen.getByRole('link', { name: 'next' }))
+
+    expect(await screen.findByText('next page')).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it.each([

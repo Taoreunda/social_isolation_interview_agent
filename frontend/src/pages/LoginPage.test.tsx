@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -53,11 +54,27 @@ class AccountScreenApi extends MockAppApi {
 
 function Location() {
   const location = useLocation()
-  const announcement = (location.state as { announcement?: string } | null)?.announcement
+  return <p data-testid="location">{location.pathname}</p>
+}
+
+function UnmountableLogin() {
+  const [mounted, setMounted] = useState(true)
   return (
     <>
-      <p data-testid="location">{location.pathname}</p>
-      {announcement && <p role="status">{announcement}</p>}
+      {mounted && <LoginPage />}
+      <button onClick={() => setMounted(false)} type="button">로그인 화면 닫기</button>
+      <Location />
+    </>
+  )
+}
+
+function UnmountablePassword() {
+  const [mounted, setMounted] = useState(true)
+  return (
+    <>
+      {mounted && <PasswordPage />}
+      <button onClick={() => setMounted(false)} type="button">비밀번호 화면 닫기</button>
+      <Location />
     </>
   )
 }
@@ -70,6 +87,23 @@ function renderAccountScreen(api: AppApi, initialEntry: string, page: 'login' | 
           <Routes>
             <Route path="/login" element={page === 'login' ? <LoginPage /> : <Location />} />
             <Route path="/password" element={page === 'password' ? <PasswordPage /> : <Location />} />
+            <Route path="/interview" element={<Location />} />
+            <Route path="/admin" element={<Location />} />
+          </Routes>
+        </MemoryRouter>
+      </SessionProvider>
+    </ApiProvider>,
+  )
+}
+
+function renderUnmountableScreen(api: AppApi, page: 'login' | 'password') {
+  return render(
+    <ApiProvider api={api}>
+      <SessionProvider>
+        <MemoryRouter initialEntries={[page === 'login' ? '/login' : '/password']}>
+          <Routes>
+            <Route path="/login" element={page === 'login' ? <UnmountableLogin /> : <Location />} />
+            <Route path="/password" element={page === 'password' ? <UnmountablePassword /> : <Location />} />
             <Route path="/interview" element={<Location />} />
             <Route path="/admin" element={<Location />} />
           </Routes>
@@ -164,7 +198,7 @@ describe('LoginPage', () => {
     })
   })
 
-  it('prevents duplicate login submission while busy', async () => {
+  it('prevents same-tick duplicate login submissions', async () => {
     let resolveLogin!: (user: CurrentUser) => void
     const api = new AccountScreenApi()
     api.loginMock.mockImplementation(() => new Promise((resolve) => {
@@ -176,13 +210,73 @@ describe('LoginPage', () => {
 
     await fillLogin(user)
     const submit = screen.getByRole('button', { name: '로그인' })
-    await user.click(submit)
-    await user.click(submit)
+    act(() => {
+      submit.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      submit.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
 
     expect(api.loginMock).toHaveBeenCalledTimes(1)
     expect(submit).toHaveAttribute('aria-busy', 'true')
     resolveLogin(participant)
     expect(await screen.findByTestId('location')).toHaveTextContent('/interview')
+  })
+
+  it('allows login retry after a failure', async () => {
+    const api = new AccountScreenApi()
+    api.loginMock
+      .mockRejectedValueOnce(new Error('rejected'))
+      .mockResolvedValueOnce(participant)
+    const user = userEvent.setup()
+    renderAccountScreen(api, '/login', 'login')
+    await screen.findByRole('heading', { name: '로그인' })
+
+    await fillLogin(user)
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('로그인에 실패했습니다')
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+
+    expect(await screen.findByTestId('location')).toHaveTextContent('/interview')
+    expect(api.loginMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not navigate when a login succeeds after its page unmounts', async () => {
+    let resolveLogin!: (user: CurrentUser) => void
+    const api = new AccountScreenApi()
+    api.loginMock.mockImplementation(() => new Promise((resolve) => {
+      resolveLogin = resolve
+    }))
+    const user = userEvent.setup()
+    renderUnmountableScreen(api, 'login')
+    await screen.findByRole('heading', { name: '로그인' })
+
+    await fillLogin(user)
+    fireEvent.submit(screen.getByRole('button', { name: '로그인' }).closest('form')!)
+    await user.click(screen.getByRole('button', { name: '로그인 화면 닫기' }))
+    await act(async () => {
+      resolveLogin(participant)
+    })
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/login')
+  })
+
+  it('does not surface a login failure after its page unmounts', async () => {
+    let rejectLogin!: (reason: Error) => void
+    const api = new AccountScreenApi()
+    api.loginMock.mockImplementation(() => new Promise((_resolve, reject) => {
+      rejectLogin = reject
+    }))
+    const user = userEvent.setup()
+    renderUnmountableScreen(api, 'login')
+    await screen.findByRole('heading', { name: '로그인' })
+
+    await fillLogin(user)
+    fireEvent.submit(screen.getByRole('button', { name: '로그인' }).closest('form')!)
+    await user.click(screen.getByRole('button', { name: '로그인 화면 닫기' }))
+    await act(async () => {
+      rejectLogin(new Error('rejected'))
+    })
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
 
@@ -203,7 +297,6 @@ describe('PasswordPage', () => {
       expect(api.changePasswordMock).toHaveBeenCalledWith('current-password', 'changed-password')
     })
     expect(await screen.findByTestId('location')).toHaveTextContent('/interview')
-    expect(screen.getByRole('status')).toHaveTextContent('변경했습니다')
   })
 
   it('validates password length and confirmation before it submits', async () => {
@@ -248,5 +341,89 @@ describe('PasswordPage', () => {
     await user.click(screen.getByRole('button', { name: '취소' }))
 
     expect(await screen.findByTestId('location')).toHaveTextContent('/admin')
+  })
+
+  it('prevents same-tick duplicate password changes', async () => {
+    let resolveChange!: () => void
+    const api = new AccountScreenApi()
+    api.currentUser = participant
+    api.changePasswordMock.mockImplementation(() => new Promise((resolve) => {
+      resolveChange = resolve
+    }))
+    const user = userEvent.setup()
+    renderAccountScreen(api, '/password', 'password')
+    await screen.findByRole('heading', { name: '비밀번호 변경' })
+
+    await fillPasswordChange(user)
+    const submit = screen.getByRole('button', { name: '변경' })
+    act(() => {
+      submit.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      submit.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(api.changePasswordMock).toHaveBeenCalledTimes(1)
+    resolveChange()
+    expect(await screen.findByTestId('location')).toHaveTextContent('/interview')
+  })
+
+  it('allows password-change retry after a failure', async () => {
+    const api = new AccountScreenApi()
+    api.currentUser = participant
+    api.changePasswordMock
+      .mockRejectedValueOnce(new Error('rejected'))
+      .mockResolvedValueOnce()
+    const user = userEvent.setup()
+    renderAccountScreen(api, '/password', 'password')
+    await screen.findByRole('heading', { name: '비밀번호 변경' })
+
+    await fillPasswordChange(user)
+    await user.click(screen.getByRole('button', { name: '변경' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('변경에 실패했습니다')
+    await user.click(screen.getByRole('button', { name: '변경' }))
+
+    expect(await screen.findByTestId('location')).toHaveTextContent('/interview')
+    expect(api.changePasswordMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not navigate when a password change succeeds after its page unmounts', async () => {
+    let resolveChange!: () => void
+    const api = new AccountScreenApi()
+    api.currentUser = participant
+    api.changePasswordMock.mockImplementation(() => new Promise((resolve) => {
+      resolveChange = resolve
+    }))
+    const user = userEvent.setup()
+    renderUnmountableScreen(api, 'password')
+    await screen.findByRole('heading', { name: '비밀번호 변경' })
+
+    await fillPasswordChange(user)
+    fireEvent.submit(screen.getByRole('button', { name: '변경' }).closest('form')!)
+    await user.click(screen.getByRole('button', { name: '비밀번호 화면 닫기' }))
+    await act(async () => {
+      resolveChange()
+    })
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/password')
+  })
+
+  it('does not surface a password-change failure after its page unmounts', async () => {
+    let rejectChange!: (reason: Error) => void
+    const api = new AccountScreenApi()
+    api.currentUser = participant
+    api.changePasswordMock.mockImplementation(() => new Promise((_resolve, reject) => {
+      rejectChange = reject
+    }))
+    const user = userEvent.setup()
+    renderUnmountableScreen(api, 'password')
+    await screen.findByRole('heading', { name: '비밀번호 변경' })
+
+    await fillPasswordChange(user)
+    fireEvent.submit(screen.getByRole('button', { name: '변경' }).closest('form')!)
+    await user.click(screen.getByRole('button', { name: '비밀번호 화면 닫기' }))
+    await act(async () => {
+      rejectChange(new Error('rejected'))
+    })
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
