@@ -55,7 +55,7 @@ export function AdminLayout() {
         </div>
       </header>
       <NavigationAnnouncement />
-      <main className="flex-1"><Outlet /></main>
+      <div className="flex-1"><Outlet /></div>
     </div>
   )
 }

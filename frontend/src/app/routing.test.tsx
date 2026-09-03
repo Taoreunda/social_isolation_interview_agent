@@ -6,8 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App, * as AppModule from '../App'
 import { ApiProvider } from './api-context'
-import type { AppApi, CurrentUser, LoginInput } from './contracts'
+import type { AppApi, CurrentUser, InterviewDetail, InterviewListItem, LoginInput } from './contracts'
 import { MockAppApi } from '../mocks/mock-api'
+import { createMockFixtureState } from '../mocks/fixtures'
 import { AdminLayout } from '../layouts/AdminLayout'
 import { ParticipantLayout } from '../layouts/ParticipantLayout'
 import { RequireGuest, RequireRole } from './route-guards'
@@ -75,6 +76,23 @@ class DeferredAppApi extends MockAppApi {
   }
 }
 
+class DeferredRoutePageApi extends MockAppApi {
+  readonly currentInterviewRequests: Deferred<InterviewDetail>[] = []
+  readonly interviewListRequests: Deferred<InterviewListItem[]>[] = []
+
+  override getCurrentInterview(): Promise<InterviewDetail> {
+    const request = deferred<InterviewDetail>()
+    this.currentInterviewRequests.push(request)
+    return request.promise
+  }
+
+  override listInterviews(): Promise<InterviewListItem[]> {
+    const request = deferred<InterviewListItem[]>()
+    this.interviewListRequests.push(request)
+    return request.promise
+  }
+}
+
 function createStorage(): Storage {
   const values = new Map<string, string>()
   return {
@@ -118,6 +136,11 @@ function renderCompleteRoutes(api: AppApi, entry: string, strict = false) {
     </ApiProvider>
   )
   return render(strict ? <StrictMode>{routeTree}</StrictMode> : routeTree)
+}
+
+function expectSingleMainLandmark(): void {
+  expect(screen.getAllByRole('main')).toHaveLength(1)
+  expect(document.querySelector('main main')).toBeNull()
 }
 
 function renderRoutes(api: AppApi, entry: string) {
@@ -280,6 +303,46 @@ describe('complete application route tree', () => {
 
     expect(await screen.findByRole('heading', { name: '인터뷰 검토' })).toBeInTheDocument()
     expect(screen.getByTestId('location-path')).toHaveTextContent('/admin/interviews/interview-001')
+  })
+
+  it('keeps one main landmark while the participant page loads and becomes ready', async () => {
+    const api = new DeferredRoutePageApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: false })
+    renderCompleteRoutes(api, '/interview')
+
+    expect(await screen.findByText('인터뷰 시작')).toHaveAttribute('role', 'status')
+    expectSingleMainLandmark()
+
+    await act(async () => {
+      api.currentInterviewRequests[0].resolve(createMockFixtureState().interviews[0])
+    })
+
+    expect(await screen.findByRole('heading', { name: '인터뷰 시작' })).toBeInTheDocument()
+    expectSingleMainLandmark()
+  })
+
+  it('keeps one main landmark through admin loading, error, and ready states', async () => {
+    const api = new DeferredRoutePageApi()
+    await api.login({ username: 'admin', password: 'research123!', remember: false })
+    renderCompleteRoutes(api, '/admin')
+
+    expect(await screen.findByText('인터뷰를 불러오는 중')).toHaveAttribute('role', 'status')
+    expectSingleMainLandmark()
+
+    await act(async () => {
+      api.interviewListRequests[0].reject(new Error('load failed'))
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('인터뷰를 불러오지 못했습니다')
+    expectSingleMainLandmark()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '다시 시도' }))
+    await act(async () => {
+      api.interviewListRequests[1].resolve([])
+    })
+
+    expect(await screen.findByRole('heading', { name: '검토' })).toBeInTheDocument()
+    expectSingleMainLandmark()
   })
 
   it('logs out from the complete participant route tree', async () => {

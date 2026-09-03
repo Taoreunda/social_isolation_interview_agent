@@ -47,7 +47,7 @@ export function ParticipantLayout() {
         </div>
       </header>
       <NavigationAnnouncement />
-      <main className="flex-1"><Outlet /></main>
+      <div className="flex-1"><Outlet /></div>
     </div>
   )
 }
