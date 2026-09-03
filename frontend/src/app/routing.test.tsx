@@ -1,15 +1,66 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from './api-context'
-import type { AppApi } from './contracts'
+import type { AppApi, CurrentUser, LoginInput } from './contracts'
 import { MockAppApi } from '../mocks/mock-api'
 import { AdminLayout } from '../layouts/AdminLayout'
 import { ParticipantLayout } from '../layouts/ParticipantLayout'
 import { RequireGuest, RequireRole } from './route-guards'
-import { SessionProvider } from './session-context'
+import { SessionProvider, useSession } from './session-context'
+
+const participant: CurrentUser = {
+  id: 'participant-001',
+  username: 'participant01',
+  role: 'participant',
+  participantCode: 'P-001',
+}
+
+const admin: CurrentUser = {
+  id: 'admin-001',
+  username: 'admin',
+  role: 'admin',
+  participantCode: null,
+}
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T) => void
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
+class DeferredAppApi extends MockAppApi {
+  readonly currentUserRequests: Deferred<CurrentUser | null>[] = []
+  readonly loginRequests: Deferred<CurrentUser>[] = []
+  readonly logoutRequests: Deferred<void>[] = []
+
+  override login(_input: LoginInput): Promise<CurrentUser> {
+    const request = deferred<CurrentUser>()
+    this.loginRequests.push(request)
+    return request.promise
+  }
+
+  override logout(): Promise<void> {
+    const request = deferred<void>()
+    this.logoutRequests.push(request)
+    return request.promise
+  }
+
+  override getCurrentUser(): Promise<CurrentUser | null> {
+    const request = deferred<CurrentUser | null>()
+    this.currentUserRequests.push(request)
+    return request.promise
+  }
+}
 
 function createStorage(): Storage {
   const values = new Map<string, string>()
@@ -51,6 +102,41 @@ function renderRoutes(api: AppApi, entry: string) {
       </SessionProvider>
     </ApiProvider>,
   )
+}
+
+function SessionControls({ onRender }: { onRender?: (value: string) => void }) {
+  const { login, logout, refresh, status, user } = useSession()
+  const value = `${status}:${user?.username ?? 'guest'}`
+  onRender?.(value)
+
+  return (
+    <>
+      <p>{value}</p>
+      <button onClick={() => void refresh()}>refresh</button>
+      <button onClick={() => void login({ username: 'participant01', password: 'research123!', remember: false })}>
+        login
+      </button>
+      <button onClick={() => void logout()}>logout</button>
+    </>
+  )
+}
+
+function renderSession(api: AppApi, onRender?: (value: string) => void) {
+  return render(
+    <ApiProvider api={api}>
+      <SessionProvider>
+        <SessionControls onRender={onRender} />
+      </SessionProvider>
+    </ApiProvider>,
+  )
+}
+
+async function resolveInitialGuest(api: DeferredAppApi): Promise<void> {
+  expect(api.currentUserRequests).toHaveLength(1)
+  await act(async () => {
+    api.currentUserRequests[0].resolve(null)
+  })
+  expect(await screen.findByText('guest:guest')).toBeInTheDocument()
 }
 
 describe('role-protected routes', () => {
@@ -118,5 +204,96 @@ describe('role-protected routes', () => {
 
     expect(await screen.findByText('Login')).toBeInTheDocument()
     expect(await api.getCurrentUser()).toBeNull()
+  })
+})
+
+describe('session operation ordering', () => {
+  it('synchronizes the public session after refresh', async () => {
+    const api = new DeferredAppApi()
+    renderSession(api)
+    await resolveInitialGuest(api)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'refresh' }))
+    await act(async () => {
+      api.currentUserRequests[1].resolve(admin)
+    })
+
+    expect(await screen.findByText('authenticated:admin')).toBeInTheDocument()
+  })
+
+  it('does not let a stale refresh overwrite a later login', async () => {
+    const api = new DeferredAppApi()
+    renderSession(api)
+    await resolveInitialGuest(api)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'refresh' }))
+    await user.click(screen.getByRole('button', { name: 'login' }))
+    await act(async () => {
+      api.loginRequests[0].resolve(participant)
+    })
+    expect(await screen.findByText('authenticated:participant01')).toBeInTheDocument()
+
+    await act(async () => {
+      api.currentUserRequests[1].resolve(admin)
+    })
+
+    expect(screen.getByText('authenticated:participant01')).toBeInTheDocument()
+  })
+
+  it('does not let a stale login undo logout', async () => {
+    const api = new DeferredAppApi()
+    renderSession(api)
+    await resolveInitialGuest(api)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'login' }))
+    await user.click(screen.getByRole('button', { name: 'logout' }))
+    await act(async () => {
+      api.logoutRequests[0].resolve()
+    })
+    expect(await screen.findByText('guest:guest')).toBeInTheDocument()
+
+    await act(async () => {
+      api.loginRequests[0].resolve(participant)
+    })
+
+    expect(screen.getByText('guest:guest')).toBeInTheDocument()
+  })
+
+  it('does not let a stale refresh undo logout', async () => {
+    const api = new DeferredAppApi()
+    renderSession(api)
+    await resolveInitialGuest(api)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'refresh' }))
+    await user.click(screen.getByRole('button', { name: 'logout' }))
+    await act(async () => {
+      api.logoutRequests[0].resolve()
+    })
+    expect(await screen.findByText('guest:guest')).toBeInTheDocument()
+
+    await act(async () => {
+      api.currentUserRequests[1].resolve(admin)
+    })
+
+    expect(screen.getByText('guest:guest')).toBeInTheDocument()
+  })
+
+  it('does not render after an unmounted refresh resolves', async () => {
+    const api = new DeferredAppApi()
+    const onRender = vi.fn()
+    const view = renderSession(api, onRender)
+    await resolveInitialGuest(api)
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'refresh' }))
+    const rendersBeforeUnmount = onRender.mock.calls.length
+    view.unmount()
+    await act(async () => {
+      api.currentUserRequests[1].resolve(admin)
+    })
+
+    expect(onRender).toHaveBeenCalledTimes(rendersBeforeUnmount)
   })
 })

@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -37,40 +38,50 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const api = useApi()
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [status, setStatus] = useState<SessionStatus>('loading')
+  const mounted = useRef(false)
+  const generation = useRef(0)
 
-  const refresh = useCallback(async () => {
-    const currentUser = await api.getCurrentUser()
+  const nextOperation = useCallback(() => ++generation.current, [])
+
+  const synchronize = useCallback((operation: number, currentUser: CurrentUser | null) => {
+    if (!mounted.current || operation !== generation.current) return
     setUser(currentUser)
     setStatus(currentUser ? 'authenticated' : 'guest')
+  }, [])
+
+  const refresh = useCallback(async () => {
+    const operation = nextOperation()
+    const currentUser = await api.getCurrentUser()
+    synchronize(operation, currentUser)
     return currentUser
-  }, [api])
+  }, [api, nextOperation, synchronize])
 
   useEffect(() => {
-    let active = true
+    mounted.current = true
+    const operation = nextOperation()
 
     void api.getCurrentUser().then((currentUser) => {
-      if (!active) return
-      setUser(currentUser)
-      setStatus(currentUser ? 'authenticated' : 'guest')
+      synchronize(operation, currentUser)
     })
 
     return () => {
-      active = false
+      mounted.current = false
+      nextOperation()
     }
-  }, [api])
+  }, [api, nextOperation, synchronize])
 
   const login = useCallback(async (input: LoginInput) => {
+    const operation = nextOperation()
     const currentUser = await api.login(input)
-    setUser(currentUser)
-    setStatus('authenticated')
+    synchronize(operation, currentUser)
     return currentUser
-  }, [api])
+  }, [api, nextOperation, synchronize])
 
   const logout = useCallback(async () => {
+    const operation = nextOperation()
     await api.logout()
-    setUser(null)
-    setStatus('guest')
-  }, [api])
+    synchronize(operation, null)
+  }, [api, nextOperation, synchronize])
 
   const value = useMemo<SessionContextValue>(() => ({
     user,
