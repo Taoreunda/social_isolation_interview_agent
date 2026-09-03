@@ -246,6 +246,30 @@ describe('MockAppApi', () => {
     })).resolves.toMatchObject({ role: 'participant' })
   })
 
+  it('keeps created and reset plaintext passwords out of runtime account records', async () => {
+    const api = new MockAppApi()
+    await api.login(adminLogin)
+    const createdPassword = 'created-password-123!'
+    const created = await api.createParticipant({
+      username: 'participant02',
+      participantCode: 'P-002',
+      password: createdPassword,
+    })
+
+    const state = (api as unknown as { state: { accounts: Array<Record<string, unknown>> } }).state
+    expect(state.accounts.find((account) => account.id === created.id)).not.toHaveProperty('password')
+    expect(JSON.stringify(state)).not.toContain(createdPassword)
+
+    const reset = await api.resetParticipantPassword('participant-001')
+    expect(JSON.stringify(state)).not.toContain(reset.assignedPassword)
+    await api.logout()
+    await expect(api.login({ username: 'participant02', password: createdPassword, remember: false }))
+      .resolves.toMatchObject({ id: created.id })
+    await api.logout()
+    await expect(api.login({ username: 'participant01', password: reset.assignedPassword, remember: false }))
+      .resolves.toMatchObject({ id: 'participant-001' })
+  })
+
   it('disables a participant account', async () => {
     const api = new MockAppApi()
     await api.login(adminLogin)

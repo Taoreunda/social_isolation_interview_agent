@@ -1,5 +1,5 @@
 import { AlertCircle, Ban, CircleCheck, CircleOff, Clock3, KeyRound, Search, UserPlus } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '@/app/api-context'
 import type { ParticipantRecord } from '@/app/contracts'
@@ -57,14 +57,28 @@ export function ParticipantsPage() {
   const [participantToDisable, setParticipantToDisable] = useState<ParticipantRecord | null>(null)
   const [disableError, setDisableError] = useState<string | null>(null)
   const [isDisabling, setIsDisabling] = useState(false)
+  const mounted = useRef(false)
+  const operation = useRef(0)
+  const disableInFlight = useRef(false)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      operation.current += 1
+    }
+  }, [])
 
   const loadParticipants = useCallback(async (): Promise<void> => {
+    const currentOperation = ++operation.current
     setPhase('loading')
     try {
-      setParticipants(await api.listParticipants())
+      const listed = await api.listParticipants()
+      if (!mounted.current || currentOperation !== operation.current) return
+      setParticipants(listed)
       setPhase('ready')
     } catch {
-      setPhase('error')
+      if (mounted.current && currentOperation === operation.current) setPhase('error')
     }
   }, [api])
 
@@ -82,43 +96,59 @@ export function ParticipantsPage() {
   }, [participants, query])
 
   function updateParticipant(updated: ParticipantRecord): void {
+    if (!mounted.current) return
+    operation.current += 1
     setParticipants((current) => [...current.filter((item) => item.id !== updated.id), updated]
       .sort((left, right) => left.participantCode.localeCompare(right.participantCode)))
+    setPhase('ready')
   }
 
   async function disableParticipant(): Promise<void> {
-    if (!participantToDisable || isDisabling) return
+    if (!participantToDisable || disableInFlight.current) return
+    const currentOperation = ++operation.current
+    disableInFlight.current = true
     setDisableError(null)
     setIsDisabling(true)
     try {
-      updateParticipant(await api.disableParticipant(participantToDisable.id))
+      const updated = await api.disableParticipant(participantToDisable.id)
+      if (!mounted.current || currentOperation !== operation.current) return
+      setParticipants((current) => [...current.filter((item) => item.id !== updated.id), updated]
+        .sort((left, right) => left.participantCode.localeCompare(right.participantCode)))
+      setPhase('ready')
       setParticipantToDisable(null)
     } catch {
-      setDisableError('참여자를 비활성화하지 못했습니다')
+      if (mounted.current && currentOperation === operation.current) setDisableError('참여자를 비활성화하지 못했습니다')
     } finally {
-      setIsDisabling(false)
+      disableInFlight.current = false
+      if (mounted.current && currentOperation === operation.current) setIsDisabling(false)
     }
+  }
+
+  function closeDisableDialog(): void {
+    operation.current += 1
+    setParticipantToDisable(null)
+    setDisableError(null)
   }
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold">참여자</h1>
-        <Button onClick={() => setDialog({ mode: 'create' })} type="button">
+        <div className="relative min-w-0 flex-1 basis-48">
+          <Search aria-hidden="true" className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
+          <Input
+            aria-label="참여자 검색"
+            className="pl-9"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="코드 또는 사용자 이름"
+            role="searchbox"
+            value={query}
+          />
+        </div>
+        <Button className="h-auto min-h-9 whitespace-normal text-center" onClick={() => setDialog({ mode: 'create' })} type="button">
           <UserPlus aria-hidden="true" />
           계정 생성
         </Button>
-      </div>
-      <div className="relative mt-5 max-w-sm">
-        <Search aria-hidden="true" className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
-        <Input
-          aria-label="참여자 검색"
-          className="pl-9"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="코드 또는 사용자 이름"
-          role="searchbox"
-          value={query}
-        />
       </div>
 
       {phase === 'loading' && <p className="mt-6" role="status">참여자를 불러오는 중</p>}
@@ -142,18 +172,18 @@ export function ParticipantsPage() {
           <TableBody className="block sm:table-row-group">
             {visibleParticipants.map((participant) => (
               <TableRow className="block sm:table-row" key={participant.id}>
-                <TableCell className="block sm:table-cell"><span className="mr-1 font-medium sm:hidden">코드:</span>{participant.participantCode}</TableCell>
-                <TableCell className="block sm:table-cell"><span className="mr-1 font-medium sm:hidden">사용자:</span>{participant.username}</TableCell>
-                <TableCell className="block sm:table-cell"><span className="mr-1 font-medium sm:hidden">계정:</span><AccountStatus status={participant.status} /></TableCell>
-                <TableCell className="block sm:table-cell"><span className="mr-1 font-medium sm:hidden">인터뷰:</span><InterviewStatus status={participant.interviewStatus} /></TableCell>
-                <TableCell className="block sm:table-cell">
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Button onClick={() => setDialog({ mode: 'reset', participant })} size="sm" type="button" variant="outline">
+                <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">코드:</span>{participant.participantCode}</TableCell>
+                <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">사용자:</span>{participant.username}</TableCell>
+                <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">계정:</span><AccountStatus status={participant.status} /></TableCell>
+                <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">인터뷰:</span><InterviewStatus status={participant.interviewStatus} /></TableCell>
+                <TableCell className="block break-words whitespace-normal sm:table-cell">
+                  <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
+                    <Button className="h-auto min-h-8 whitespace-normal" onClick={() => setDialog({ mode: 'reset', participant })} size="sm" type="button" variant="outline">
                       <KeyRound aria-hidden="true" />
                       비밀번호 재설정
                     </Button>
                     {participant.status === 'active' && (
-                      <Button onClick={() => setParticipantToDisable(participant)} size="sm" type="button" variant="outline">
+                      <Button className="h-auto min-h-8 whitespace-normal" onClick={() => setParticipantToDisable(participant)} size="sm" type="button" variant="outline">
                         <Ban aria-hidden="true" />
                         비활성화
                       </Button>
@@ -179,13 +209,13 @@ export function ParticipantsPage() {
         />
       )}
 
-      <Dialog onOpenChange={(open) => !open && setParticipantToDisable(null)} open={Boolean(participantToDisable)}>
+      <Dialog onOpenChange={(open) => !open && closeDisableDialog()} open={Boolean(participantToDisable)}>
         <DialogContent>
           <DialogHeader><DialogTitle>참여자 비활성화</DialogTitle></DialogHeader>
           <p className="text-sm">{participantToDisable?.participantCode}</p>
           {disableError && <p role="alert">{disableError}</p>}
           <DialogFooter>
-            <Button disabled={isDisabling} onClick={() => setParticipantToDisable(null)} type="button" variant="outline">취소</Button>
+            <Button disabled={isDisabling} onClick={closeDisableDialog} type="button" variant="outline">취소</Button>
             <Button aria-busy={isDisabling} disabled={isDisabling} onClick={() => void disableParticipant()} type="button">
               <Ban aria-hidden="true" />
               비활성화

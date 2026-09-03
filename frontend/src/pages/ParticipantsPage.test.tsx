@@ -1,8 +1,9 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
+import type { CreateParticipantInput, ParticipantRecord } from '@/app/contracts'
 import { MockAppApi } from '@/mocks/mock-api'
 import { ParticipantsPage } from './ParticipantsPage'
 
@@ -44,9 +45,66 @@ async function renderParticipantsPage() {
   return api
 }
 
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (reason?: unknown) => void
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+class DeferredParticipantApi extends MockAppApi {
+  readonly createInputs: CreateParticipantInput[] = []
+  readonly createRequests: Deferred<ParticipantRecord>[] = []
+  readonly listRequests: Deferred<ParticipantRecord[]>[] = []
+
+  override createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord> {
+    this.createInputs.push(input)
+    const request = deferred<ParticipantRecord>()
+    this.createRequests.push(request)
+    return request.promise
+  }
+
+  override listParticipants(): Promise<ParticipantRecord[]> {
+    const request = deferred<ParticipantRecord[]>()
+    this.listRequests.push(request)
+    return request.promise
+  }
+}
+
+function participant(overrides: Partial<ParticipantRecord> = {}): ParticipantRecord {
+  return {
+    id: 'participant-002',
+    username: 'participant02',
+    participantCode: 'P-002',
+    status: 'active',
+    interviewStatus: 'not_started',
+    ...overrides,
+  }
+}
+
+function renderWithApi(api: MockAppApi) {
+  return render(
+    <ApiProvider api={api}>
+      <ParticipantsPage />
+    </ApiProvider>,
+  )
+}
+
 describe('ParticipantsPage', () => {
   beforeEach(installBrowserStorage)
-  afterEach(installBrowserStorage)
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    installBrowserStorage()
+  })
 
   it('lists participant code, username, status, and interview status', async () => {
     await renderParticipantsPage()
@@ -111,4 +169,86 @@ describe('ParticipantsPage', () => {
 
     expect(screen.queryByText(/회원가입|공개 등록|강제 변경/)).not.toBeInTheDocument()
   })
+
+  it('normalizes whitespace and case before filtering participant rows', async () => {
+    await renderParticipantsPage()
+    const user = userEvent.setup()
+
+    await user.type(screen.getByRole('searchbox', { name: '참여자 검색' }), '  p-001  ')
+
+    expect(await screen.findByText('P-001')).toBeInTheDocument()
+  })
+
+  it('submits the administrator-edited assigned password', async () => {
+    await renderParticipantsPage()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: '계정 생성' }))
+    const password = screen.getByLabelText('할당 비밀번호')
+    await user.clear(password)
+    await user.type(password, 'edited-password-123!')
+    await user.type(screen.getByLabelText('사용자 이름'), 'participant02')
+    await user.type(screen.getByLabelText('참여자 코드'), 'P-002')
+    await user.click(screen.getByRole('button', { name: '생성' }))
+
+    expect(await screen.findByLabelText('할당된 비밀번호')).toHaveTextContent('edited-password-123!')
+  })
+
+  it('locks duplicate create activation synchronously', async () => {
+    const api = new DeferredParticipantApi()
+    renderWithApi(api)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: '참여자' })
+    await user.click(screen.getByRole('button', { name: '계정 생성' }))
+    await user.type(screen.getByLabelText('사용자 이름'), 'participant02')
+    await user.type(screen.getByLabelText('참여자 코드'), 'P-002')
+
+    const form = screen.getByRole('button', { name: '생성' }).closest('form')!
+    act(() => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(api.createRequests).toHaveLength(1)
+  })
+
+  it('does not let a late list request overwrite a newly created returned record', async () => {
+    const api = new DeferredParticipantApi()
+    renderWithApi(api)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: '참여자' })
+    await user.click(screen.getByRole('button', { name: '계정 생성' }))
+    await user.type(screen.getByLabelText('사용자 이름'), 'participant02')
+    await user.type(screen.getByLabelText('참여자 코드'), 'P-002')
+    await user.click(screen.getByRole('button', { name: '생성' }))
+
+    await act(async () => {
+      api.createRequests[0].resolve(participant())
+    })
+    expect(await screen.findByText('P-002')).toBeInTheDocument()
+    await act(async () => {
+      api.listRequests[0].resolve([])
+    })
+
+    expect(screen.getByText('P-002')).toBeInTheDocument()
+  })
+
+  it('ignores a late create result after its dialog closes', async () => {
+    const api = new DeferredParticipantApi()
+    renderWithApi(api)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: '참여자' })
+    await user.click(screen.getByRole('button', { name: '계정 생성' }))
+    await user.type(screen.getByLabelText('사용자 이름'), 'participant02')
+    await user.type(screen.getByLabelText('참여자 코드'), 'P-002')
+    await user.click(screen.getByRole('button', { name: '생성' }))
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    await act(async () => {
+      api.createRequests[0].resolve(participant())
+    })
+
+    expect(screen.queryByText('P-002')).not.toBeInTheDocument()
+  })
+
 })

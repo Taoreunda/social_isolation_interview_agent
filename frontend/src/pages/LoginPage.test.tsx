@@ -8,7 +8,7 @@ import { ApiProvider } from '@/app/api-context'
 import type { AppApi, CurrentUser, LoginInput } from '@/app/contracts'
 import { RequireGuest } from '@/app/route-guards'
 import { SessionProvider, useSession } from '@/app/session-context'
-import { createMockFixtureState } from '@/mocks/fixtures'
+import { mockCredentials } from '@/mocks/fixtures'
 import { MockAppApi } from '@/mocks/mock-api'
 
 import { LoginPage } from './LoginPage'
@@ -195,8 +195,7 @@ function renderGuardedLogin(api: AppApi) {
 }
 
 function fixtureLogin(role: 'participant' | 'admin'): LoginInput {
-  const account = createMockFixtureState().accounts.find((item) => item.role === role)
-  if (!account) throw new Error(`${role} fixture is required`)
+  const account = mockCredentials[role]
   return { username: account.username, password: account.password, remember: false }
 }
 

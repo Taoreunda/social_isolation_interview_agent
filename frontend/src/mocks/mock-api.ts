@@ -37,10 +37,8 @@ export class MockAppApi implements AppApi {
 
   async login(input: LoginInput, signal?: AbortSignal): Promise<CurrentUser> {
     this.throwIfAborted(signal)
-    const account = this.state.accounts.find((candidate) =>
-      candidate.username === input.username && candidate.password === input.password,
-    )
-    if (!account || account.status === 'disabled') {
+    const account = this.state.accounts.find((candidate) => candidate.username === input.username)
+    if (!account || account.status === 'disabled' || !await this.matchesPassword(account, input.password)) {
       throw new ApiError(401, 'Invalid credentials')
     }
 
@@ -64,8 +62,8 @@ export class MockAppApi implements AppApi {
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
     const account = this.requireCurrentAccount()
-    if (account.password !== currentPassword) throw new ApiError(401, 'Invalid credentials')
-    account.password = newPassword
+    if (!await this.matchesPassword(account, currentPassword)) throw new ApiError(401, 'Invalid credentials')
+    account.passwordVerifier = await this.passwordVerifier(newPassword)
   }
 
   async getCurrentInterview(): Promise<InterviewDetail> {
@@ -131,7 +129,7 @@ export class MockAppApi implements AppApi {
         .toString()
         .padStart(3, '0')}`,
       username: input.username,
-      password: input.password,
+      passwordVerifier: await this.passwordVerifier(input.password),
       role: 'participant',
       participantCode: input.participantCode,
       status: 'active',
@@ -144,7 +142,7 @@ export class MockAppApi implements AppApi {
     this.requireAdmin()
     const account = this.findParticipant(participantId)
     const assignedPassword = `reset-${account.participantCode}-password`
-    account.password = assignedPassword
+    account.passwordVerifier = await this.passwordVerifier(assignedPassword)
     return { assignedPassword }
   }
 
@@ -295,6 +293,16 @@ export class MockAppApi implements AppApi {
 
   private turnKey(interviewId: string, clientTurnId: string): string {
     return JSON.stringify([interviewId, clientTurnId])
+  }
+
+  private async matchesPassword(account: MockAccountFixture, password: string): Promise<boolean> {
+    return account.passwordVerifier === await this.passwordVerifier(password)
+  }
+
+  private async passwordVerifier(password: string): Promise<string> {
+    const bytes = new TextEncoder().encode(password)
+    const digest = await crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('')
   }
 
   private throwIfAborted(signal: AbortSignal | undefined): void {
