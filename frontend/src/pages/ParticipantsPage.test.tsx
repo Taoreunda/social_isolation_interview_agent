@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
-import type { CreateParticipantInput, ParticipantRecord } from '@/app/contracts'
+import type { CreateParticipantInput, ParticipantRecord, PasswordResult } from '@/app/contracts'
 import { MockAppApi } from '@/mocks/mock-api'
 import { ParticipantsPage } from './ParticipantsPage'
 
@@ -66,6 +66,7 @@ class DeferredParticipantApi extends MockAppApi {
   readonly createRequests: Deferred<ParticipantRecord>[] = []
   readonly disableRequests: Deferred<ParticipantRecord>[] = []
   readonly listRequests: Deferred<ParticipantRecord[]>[] = []
+  readonly resetRequests: Deferred<PasswordResult>[] = []
 
   override createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord> {
     this.createInputs.push(input)
@@ -83,6 +84,12 @@ class DeferredParticipantApi extends MockAppApi {
   override disableParticipant(): Promise<ParticipantRecord> {
     const request = deferred<ParticipantRecord>()
     this.disableRequests.push(request)
+    return request.promise
+  }
+
+  override resetParticipantPassword(): Promise<PasswordResult> {
+    const request = deferred<PasswordResult>()
+    this.resetRequests.push(request)
     return request.promise
   }
 }
@@ -280,6 +287,83 @@ describe('ParticipantsPage', () => {
     expect(screen.getByRole('button', { name: '비활성화' })).not.toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '비활성화' }))
     expect(api.disableRequests).toHaveLength(2)
+  })
+
+  it('confirms disable once and renders the returned disabled record', async () => {
+    const api = new DeferredParticipantApi()
+    renderWithApi(api)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: '참여자' })
+    await act(async () => api.listRequests[0].resolve([participant({ id: 'participant-001', participantCode: 'P-001', username: 'participant01' })]))
+    await user.click(screen.getByRole('button', { name: '비활성화' }))
+    expect(screen.getByRole('heading', { name: '참여자 비활성화' })).toBeInTheDocument()
+    const confirm = screen.getByRole('button', { name: '비활성화' })
+    act(() => {
+      fireEvent.click(confirm)
+      fireEvent.click(confirm)
+    })
+    expect(api.disableRequests).toHaveLength(1)
+    await act(async () => api.disableRequests[0].resolve(participant({ id: 'participant-001', participantCode: 'P-001', username: 'participant01', status: 'disabled' })))
+    expect(await screen.findByText('비활성')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '비활성화' })).not.toBeInTheDocument()
+  })
+
+  it('allows reset retry after a rejected request and shows only its returned secret', async () => {
+    const api = new DeferredParticipantApi()
+    renderWithApi(api)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: '참여자' })
+    await act(async () => api.listRequests[0].resolve([participant({ id: 'participant-001', participantCode: 'P-001', username: 'participant01' })]))
+    await user.click(screen.getByRole('button', { name: '비밀번호 재설정' }))
+    const reset = screen.getByRole('button', { name: '재설정' })
+    act(() => {
+      fireEvent.click(reset)
+      fireEvent.click(reset)
+    })
+    expect(api.resetRequests).toHaveLength(1)
+    await act(async () => api.resetRequests[0].reject(new Error('rejected')))
+    expect(await screen.findByRole('alert')).toHaveTextContent('비밀번호를 재설정하지 못했습니다')
+    await user.click(screen.getByRole('button', { name: '재설정' }))
+    expect(api.resetRequests).toHaveLength(2)
+    await act(async () => api.resetRequests[1].resolve({ assignedPassword: 'reset-secret-12345!' }))
+    expect(await screen.findByLabelText('할당된 비밀번호')).toHaveTextContent('reset-secret-12345!')
+  })
+
+  it('uses Web Crypto to initialize a generated editable password', async () => {
+    const random = vi.spyOn(crypto, 'getRandomValues')
+    await renderParticipantsPage()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '계정 생성' }))
+    expect(random).toHaveBeenCalled()
+    expect((screen.getByLabelText('할당 비밀번호') as HTMLInputElement).value.length).toBeGreaterThanOrEqual(16)
+  })
+
+  it('removes create and reset plaintext from the document and storage after close', async () => {
+    await renderParticipantsPage()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '계정 생성' }))
+    const password = screen.getByLabelText('할당 비밀번호')
+    await user.clear(password)
+    await user.type(password, 'created-secret-12345!')
+    await user.type(screen.getByLabelText('사용자 이름'), 'participant02')
+    await user.type(screen.getByLabelText('참여자 코드'), 'P-002')
+    await user.click(screen.getByRole('button', { name: '생성' }))
+    await screen.findByLabelText('할당된 비밀번호')
+    await user.click(screen.getByRole('button', { name: '닫기' }))
+    expect(document.body.textContent).not.toContain('created-secret-12345!')
+    expect([...Array(window.localStorage.length)].map((_, index) => window.localStorage.getItem(window.localStorage.key(index)!)).join()).not.toContain('created-secret-12345!')
+    expect([...Array(window.sessionStorage.length)].map((_, index) => window.sessionStorage.getItem(window.sessionStorage.key(index)!)).join()).not.toContain('created-secret-12345!')
+  })
+
+  it('keeps desktop headers and mobile labels with wrapping participant values', async () => {
+    await renderParticipantsPage()
+    expect(screen.getByRole('columnheader', { name: '코드' })).toBeInTheDocument()
+    const row = await screen.findByRole('row', { name: /P-001.*participant01/i })
+    expect(within(row).getByText('코드:')).toBeInTheDocument()
+    expect(within(row).getByText('사용자:')).toBeInTheDocument()
+    expect(within(row).getByText('계정:')).toBeInTheDocument()
+    expect(within(row).getByText('인터뷰:')).toBeInTheDocument()
+    expect(within(row).getByText('participant01')).toHaveClass('break-words', 'whitespace-normal')
   })
 
 })
