@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { renderHook } from '@testing-library/react'
 
 import { ApiProvider, useApi } from '../app/api-context'
+import { createMockFixtureState } from './fixtures'
 import { ApiError, MockAppApi } from './mock-api'
 
 const participantLogin = {
@@ -107,6 +108,84 @@ describe('MockAppApi', () => {
       role: 'user',
       content: '요즘 혼자 지내는 시간이 많아요.',
     })
+  })
+
+  it('rejects a cached turn retry after logout and administrator login', async () => {
+    const api = new MockAppApi()
+    await api.login(participantLogin)
+    const interview = await api.getCurrentInterview()
+    await api.sendMessage(interview.id, 'turn-after-logout', '첫 응답')
+    await api.logout()
+    await api.login(adminLogin)
+
+    await expect(api.sendMessage(interview.id, 'turn-after-logout', '재시도')).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('rejects a cached turn retry for a disabled participant session', async () => {
+    const api = new MockAppApi()
+    await api.login(participantLogin)
+    const interview = await api.getCurrentInterview()
+    await api.sendMessage(interview.id, 'turn-after-disable', '첫 응답')
+    await api.login(adminLogin)
+    await api.disableParticipant('participant-001')
+    window.sessionStorage.setItem('dabom.mock-user', 'participant-001')
+
+    await expect(api.sendMessage(interview.id, 'turn-after-disable', '재시도')).rejects.toMatchObject({ status: 401 })
+  })
+
+  it('keeps committed turn retries separate for different interviews', async () => {
+    const seed = createMockFixtureState()
+    seed.interviews.push({
+      ...structuredClone(seed.interviews[0]),
+      id: 'interview-002',
+      status: 'active',
+    })
+    const api = new MockAppApi(seed)
+    await api.login(participantLogin)
+
+    await api.sendMessage('interview-001', 'shared-turn-id', '첫 인터뷰 응답')
+    const second = await api.sendMessage('interview-002', 'shared-turn-id', '두 번째 인터뷰 응답')
+
+    expect(second.id).toBe('interview-002')
+    expect(second.messages[1]).toMatchObject({
+      role: 'user',
+      content: '두 번째 인터뷰 응답',
+    })
+  })
+
+  it('isolates all mutations between instances built from the same fixture seed', async () => {
+    const seed = createMockFixtureState()
+    const changed = new MockAppApi(seed)
+    const untouched = new MockAppApi(seed)
+
+    await changed.login(adminLogin)
+    await changed.createParticipant({
+      username: 'participant02',
+      participantCode: 'P-002',
+      password: 'temporary123!',
+    })
+    await changed.reviewScorecard({
+      interviewId: 'interview-001',
+      questionId: 'q1',
+      action: 'override',
+      expertStatus: 'negative',
+      rationale: '변경 인스턴스 검토',
+    })
+    await changed.login(participantLogin)
+    await changed.changePassword('research123!', 'changed-password!')
+    await changed.sendMessage('interview-001', 'isolated-turn', '변경 인스턴스 응답')
+
+    await untouched.login(adminLogin)
+    expect(await untouched.listParticipants()).toHaveLength(1)
+    const untouchedInterview = await untouched.getInterview('interview-001')
+    expect(untouchedInterview.messages).toHaveLength(1)
+    expect(untouchedInterview.reviewStatus).toBe('unreviewed')
+    expect(untouchedInterview.scorecard[0]).toMatchObject({
+      expertStatus: null,
+      expertRationale: null,
+    })
+    await untouched.logout()
+    await expect(untouched.login(participantLogin)).resolves.toMatchObject({ role: 'participant' })
   })
 
   it('creates a participant with a unique participant code', async () => {

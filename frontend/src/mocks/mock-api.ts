@@ -32,7 +32,7 @@ export class MockAppApi implements AppApi {
   private currentUserId: string | null = null
 
   constructor(state: MockFixtureState = createMockFixtureState()) {
-    this.state = state
+    this.state = this.clone(state)
   }
 
   async login(input: LoginInput): Promise<CurrentUser> {
@@ -77,12 +77,13 @@ export class MockAppApi implements AppApi {
     clientTurnId: string,
     content: string,
   ): Promise<InterviewDetail> {
-    const committed = this.committedTurns.get(clientTurnId)
-    if (committed) return this.clone(committed)
-
     const account = this.requireParticipant()
     const interview = this.findInterview(interviewId)
     if (interview.participantId !== account.id) throw new ApiError(403, 'Interview is not available')
+
+    const turnKey = this.turnKey(interviewId, clientTurnId)
+    const committed = this.committedTurns.get(turnKey)
+    if (committed) return this.clone(committed)
 
     const messageNumber = interview.messages.length + 1
     const createdAt = '2026-08-25T09:01:00.000Z'
@@ -102,7 +103,7 @@ export class MockAppApi implements AppApi {
     )
     interview.updatedAt = createdAt
     const response = this.clone(interview)
-    this.committedTurns.set(clientTurnId, response)
+    this.committedTurns.set(turnKey, response)
     return this.clone(response)
   }
 
@@ -287,6 +288,10 @@ export class MockAppApi implements AppApi {
 
   private approvedStatus(aiStatus: ScoreDecision | null): ScoreDecision | null {
     return aiStatus === 'positive' || aiStatus === 'negative' ? aiStatus : null
+  }
+
+  private turnKey(interviewId: string, clientTurnId: string): string {
+    return JSON.stringify([interviewId, clientTurnId])
   }
 
   private csvValue(value: string | number | null): string {
