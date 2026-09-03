@@ -253,10 +253,10 @@ and state messages; explanatory cards, promotional copy, decorative gradients,
 and redundant helper paragraphs are excluded.
 
 The current `#user`/`#reviewer` tab switch is removed. The participant shell
-contains only interview-related actions. The administrator shell contains
-participant management, interview review, and export navigation. Both shells
-handle loading, empty, expired-session, permission, network-error, active, and
-completed states.
+contains interview and account-password actions. The administrator shell
+contains participant management, interview review, and export navigation. Both
+shells handle loading, empty, expired-session, permission, network-error,
+active, and completed states.
 
 The first UI milestone is a functional mock using the final routes and API
 types. It must not embed a second fake persistence system; fixture data is
