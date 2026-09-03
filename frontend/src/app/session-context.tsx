@@ -60,9 +60,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     mounted.current = true
     const operation = nextOperation()
 
-    void api.getCurrentUser().then((currentUser) => {
-      synchronize(operation, currentUser)
-    })
+    void api.getCurrentUser()
+      .then((currentUser) => {
+        synchronize(operation, currentUser)
+      })
+      .catch(() => {
+        synchronize(operation, null)
+      })
 
     return () => {
       mounted.current = false

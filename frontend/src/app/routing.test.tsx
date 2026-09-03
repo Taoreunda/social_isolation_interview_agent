@@ -28,14 +28,17 @@ const admin: CurrentUser = {
 interface Deferred<T> {
   promise: Promise<T>
   resolve: (value: T) => void
+  reject: (reason?: unknown) => void
 }
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise
+    reject = rejectPromise
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 class DeferredAppApi extends MockAppApi {
@@ -104,10 +107,18 @@ function renderRoutes(api: AppApi, entry: string) {
   )
 }
 
-function SessionControls({ onRender }: { onRender?: (value: string) => void }) {
-  const { login, logout, refresh, status, user } = useSession()
+function SessionControls({
+  onRender,
+  onSession,
+}: {
+  onRender?: (value: string) => void
+  onSession?: (session: ReturnType<typeof useSession>) => void
+}) {
+  const session = useSession()
+  const { login, logout, refresh, status, user } = session
   const value = `${status}:${user?.username ?? 'guest'}`
   onRender?.(value)
+  onSession?.(session)
 
   return (
     <>
@@ -121,22 +132,31 @@ function SessionControls({ onRender }: { onRender?: (value: string) => void }) {
   )
 }
 
-function renderSession(api: AppApi, onRender?: (value: string) => void) {
+function renderSession(
+  api: AppApi,
+  onRender?: (value: string) => void,
+  onSession?: (session: ReturnType<typeof useSession>) => void,
+) {
   return render(
     <ApiProvider api={api}>
       <SessionProvider>
-        <SessionControls onRender={onRender} />
+        <SessionControls onRender={onRender} onSession={onSession} />
       </SessionProvider>
     </ApiProvider>,
   )
 }
 
-async function resolveInitialGuest(api: DeferredAppApi): Promise<void> {
+async function resolveInitialUser(api: DeferredAppApi, currentUser: CurrentUser | null): Promise<void> {
   expect(api.currentUserRequests).toHaveLength(1)
   await act(async () => {
-    api.currentUserRequests[0].resolve(null)
+    api.currentUserRequests[0].resolve(currentUser)
   })
-  expect(await screen.findByText('guest:guest')).toBeInTheDocument()
+  const session = currentUser ? `authenticated:${currentUser.username}` : 'guest:guest'
+  expect(await screen.findByText(session)).toBeInTheDocument()
+}
+
+async function resolveInitialGuest(api: DeferredAppApi): Promise<void> {
+  await resolveInitialUser(api, null)
 }
 
 describe('role-protected routes', () => {
@@ -295,5 +315,132 @@ describe('session operation ordering', () => {
     })
 
     expect(onRender).toHaveBeenCalledTimes(rendersBeforeUnmount)
+  })
+})
+
+describe('session rejection handling', () => {
+  it('handles an initial restore failure as a guest session', async () => {
+    const api = new DeferredAppApi()
+    renderSession(api)
+
+    await act(async () => {
+      api.currentUserRequests[0].reject(new Error('restore failed'))
+    })
+
+    expect(await screen.findByText('guest:guest')).toBeInTheDocument()
+    expect(screen.queryByText('불러오는 중')).not.toBeInTheDocument()
+  })
+
+  it('keeps the latest login after a stale refresh rejects', async () => {
+    const api = new DeferredAppApi()
+    let session!: ReturnType<typeof useSession>
+    renderSession(api, undefined, (currentSession) => {
+      session = currentSession
+    })
+    await resolveInitialGuest(api)
+
+    const refresh = session.refresh()
+    const refreshFailure = expect(refresh).rejects.toThrow('refresh failed')
+    const login = session.login({ username: 'participant01', password: 'research123!', remember: false })
+    await act(async () => {
+      api.loginRequests[0].resolve(participant)
+    })
+    await expect(login).resolves.toEqual(participant)
+
+    await act(async () => {
+      api.currentUserRequests[1].reject(new Error('refresh failed'))
+    })
+    await refreshFailure
+
+    expect(screen.getByText('authenticated:participant01')).toBeInTheDocument()
+  })
+
+  it('keeps logout after a stale login rejects', async () => {
+    const api = new DeferredAppApi()
+    let session!: ReturnType<typeof useSession>
+    renderSession(api, undefined, (currentSession) => {
+      session = currentSession
+    })
+    await resolveInitialGuest(api)
+
+    const login = session.login({ username: 'participant01', password: 'research123!', remember: false })
+    const loginFailure = expect(login).rejects.toThrow('login failed')
+    const logout = session.logout()
+    await act(async () => {
+      api.logoutRequests[0].resolve()
+    })
+    await expect(logout).resolves.toBeUndefined()
+
+    await act(async () => {
+      api.loginRequests[0].reject(new Error('login failed'))
+    })
+    await loginFailure
+
+    expect(screen.getByText('guest:guest')).toBeInTheDocument()
+  })
+
+  it('rejects a current refresh without changing the committed session', async () => {
+    const api = new DeferredAppApi()
+    let session!: ReturnType<typeof useSession>
+    renderSession(api, undefined, (currentSession) => {
+      session = currentSession
+    })
+    await resolveInitialGuest(api)
+
+    const refresh = session.refresh()
+    const failure = expect(refresh).rejects.toThrow('refresh failed')
+    await act(async () => {
+      api.currentUserRequests[1].reject(new Error('refresh failed'))
+    })
+    await failure
+
+    expect(screen.getByText('guest:guest')).toBeInTheDocument()
+  })
+
+  it('rejects a current login without changing the committed session', async () => {
+    const api = new DeferredAppApi()
+    let session!: ReturnType<typeof useSession>
+    renderSession(api, undefined, (currentSession) => {
+      session = currentSession
+    })
+    await resolveInitialGuest(api)
+
+    const login = session.login({ username: 'participant01', password: 'research123!', remember: false })
+    const failure = expect(login).rejects.toThrow('login failed')
+    await act(async () => {
+      api.loginRequests[0].reject(new Error('login failed'))
+    })
+    await failure
+
+    expect(screen.getByText('guest:guest')).toBeInTheDocument()
+  })
+
+  it('rejects a current logout without changing the committed session', async () => {
+    const api = new DeferredAppApi()
+    let session!: ReturnType<typeof useSession>
+    renderSession(api, undefined, (currentSession) => {
+      session = currentSession
+    })
+    await resolveInitialUser(api, participant)
+
+    const logout = session.logout()
+    const failure = expect(logout).rejects.toThrow('logout failed')
+    await act(async () => {
+      api.logoutRequests[0].reject(new Error('logout failed'))
+    })
+    await failure
+
+    expect(screen.getByText('authenticated:participant01')).toBeInTheDocument()
+  })
+
+  it('handles a rejected initial restore after unmount', async () => {
+    const api = new DeferredAppApi()
+    const view = renderSession(api)
+    expect(api.currentUserRequests).toHaveLength(1)
+    view.unmount()
+
+    await act(async () => {
+      api.currentUserRequests[0].reject(new Error('restore failed'))
+    })
   })
 })
