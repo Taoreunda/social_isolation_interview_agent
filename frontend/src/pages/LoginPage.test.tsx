@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
 import type { AppApi, CurrentUser, LoginInput } from '@/app/contracts'
-import { SessionProvider } from '@/app/session-context'
+import { RequireGuest } from '@/app/route-guards'
+import { SessionProvider, useSession } from '@/app/session-context'
+import { createMockFixtureState } from '@/mocks/fixtures'
 import { MockAppApi } from '@/mocks/mock-api'
 
 import { LoginPage } from './LoginPage'
@@ -52,9 +54,63 @@ class AccountScreenApi extends MockAppApi {
   }
 }
 
+class DeferredPersistentLoginApi extends MockAppApi {
+  private input: LoginInput | null = null
+  private resolveRequest: ((user: CurrentUser) => void) | null = null
+  private rejectRequest: ((reason: unknown) => void) | null = null
+
+  override login(input: LoginInput): Promise<CurrentUser> {
+    this.input = input
+    return new Promise((resolve, reject) => {
+      this.resolveRequest = resolve
+      this.rejectRequest = reject
+    })
+  }
+
+  async resolveLogin(): Promise<void> {
+    if (!this.input || !this.resolveRequest) throw new Error('No login request to resolve')
+    try {
+      this.resolveRequest(await super.login(this.input))
+    } catch (error) {
+      this.rejectRequest?.(error)
+    }
+  }
+}
+
+function createStorage(): Storage {
+  const values = new Map<string, string>()
+  return {
+    get length() {
+      return values.size
+    },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => values.set(key, value),
+  }
+}
+
+function installBrowserStorage(): void {
+  Object.defineProperties(window, {
+    localStorage: { configurable: true, value: createStorage() },
+    sessionStorage: { configurable: true, value: createStorage() },
+  })
+}
+
 function Location() {
   const location = useLocation()
   return <p data-testid="location">{location.pathname}</p>
+}
+
+function SessionState() {
+  const { status, user } = useSession()
+  return <p data-testid="session-state">{`${status}:${user?.username ?? 'guest'}`}</p>
+}
+
+function LeaveLoginPage() {
+  const navigate = useNavigate()
+  return <button onClick={() => navigate('/else')} type="button">다른 화면</button>
 }
 
 function UnmountableLogin() {
@@ -113,9 +169,38 @@ function renderUnmountableScreen(api: AppApi, page: 'login' | 'password') {
   )
 }
 
+function renderGuardedLogin(api: AppApi) {
+  return render(
+    <ApiProvider api={api}>
+      <SessionProvider>
+        <MemoryRouter initialEntries={['/login']}>
+          <SessionState />
+          <Routes>
+            <Route path="/login" element={<RequireGuest><><LoginPage /><LeaveLoginPage /></></RequireGuest>} />
+            <Route path="/else" element={<Location />} />
+            <Route path="/interview" element={<Location />} />
+          </Routes>
+        </MemoryRouter>
+      </SessionProvider>
+    </ApiProvider>,
+  )
+}
+
+function participantCredentials(): LoginInput {
+  const account = createMockFixtureState().accounts.find((item) => item.role === 'participant')
+  if (!account) throw new Error('Participant fixture is required')
+  return { username: account.username, password: account.password, remember: false }
+}
+
 async function fillLogin(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('사용자 이름'), 'account-user')
   await user.type(screen.getByLabelText('비밀번호'), 'account-password')
+}
+
+async function fillFixtureLogin(user: ReturnType<typeof userEvent.setup>) {
+  const credentials = participantCredentials()
+  await user.type(screen.getByLabelText('사용자 이름'), credentials.username)
+  await user.type(screen.getByLabelText('비밀번호'), credentials.password)
 }
 
 async function fillPasswordChange(user: ReturnType<typeof userEvent.setup>, newPassword = 'changed-password') {
@@ -125,6 +210,10 @@ async function fillPasswordChange(user: ReturnType<typeof userEvent.setup>, newP
 }
 
 describe('LoginPage', () => {
+  beforeEach(() => {
+    installBrowserStorage()
+  })
+
   it('requires username and password before it submits', async () => {
     const api = new AccountScreenApi()
     api.loginMock.mockResolvedValue(participant)
@@ -277,6 +366,25 @@ describe('LoginPage', () => {
     })
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('cancels a deferred real mock login after leaving a RequireGuest route', async () => {
+    const api = new DeferredPersistentLoginApi()
+    const user = userEvent.setup()
+    renderGuardedLogin(api)
+    await screen.findByRole('heading', { name: '로그인' })
+    expect(screen.getByTestId('session-state')).toHaveTextContent('guest:guest')
+
+    await fillFixtureLogin(user)
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+    await user.click(screen.getByRole('button', { name: '다른 화면' }))
+    await act(async () => {
+      await api.resolveLogin()
+    })
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/else')
+    expect(screen.getByTestId('session-state')).toHaveTextContent('guest:guest')
+    expect(await api.getCurrentUser()).toBeNull()
   })
 })
 

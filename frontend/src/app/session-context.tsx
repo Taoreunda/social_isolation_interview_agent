@@ -18,7 +18,7 @@ type SessionStatus = 'loading' | 'guest' | 'authenticated'
 interface SessionContextValue {
   user: CurrentUser | null
   status: SessionStatus
-  login: (input: LoginInput) => Promise<CurrentUser>
+  login: (input: LoginInput, signal?: AbortSignal) => Promise<CurrentUser>
   logout: () => Promise<void>
   refresh: () => Promise<CurrentUser | null>
 }
@@ -74,11 +74,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [api, nextOperation, synchronize])
 
-  const login = useCallback(async (input: LoginInput) => {
+  const login = useCallback(async (input: LoginInput, signal?: AbortSignal) => {
     const operation = nextOperation()
-    const currentUser = await api.login(input)
-    synchronize(operation, currentUser)
-    return currentUser
+    let canceled = signal?.aborted ?? false
+    const cancel = () => {
+      canceled = true
+      if (operation === generation.current) nextOperation()
+    }
+    signal?.addEventListener('abort', cancel, { once: true })
+
+    try {
+      const currentUser = await api.login(input)
+      if (canceled) {
+        try {
+          await api.logout()
+        } catch {
+          // A canceled login must not turn cleanup failure into an unhandled rejection.
+        }
+        return currentUser
+      }
+      synchronize(operation, currentUser)
+      return currentUser
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+    }
   }, [api, nextOperation, synchronize])
 
   const logout = useCallback(async () => {

@@ -21,7 +21,7 @@ export function NavigationAnnouncement() {
       setAnnouncement(state.announcement)
       navigate(
         { pathname: location.pathname, search: location.search, hash: location.hash },
-        { replace: true, state: { announcementConsumed: true } },
+        { replace: true, state: { ...state, announcementConsumed: true } },
       )
       return
     }

@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from './api-context'
@@ -105,6 +105,12 @@ function renderRoutes(api: AppApi, entry: string) {
       </SessionProvider>
     </ApiProvider>,
   )
+}
+
+function ReturnState() {
+  const location = useLocation()
+  const state = location.state as { returnTo?: string } | null
+  return <p data-testid="return-state">{state?.returnTo}</p>
 }
 
 function SessionControls({
@@ -240,10 +246,13 @@ describe('role-protected routes', () => {
     render(
       <ApiProvider api={api}>
         <SessionProvider>
-          <MemoryRouter initialEntries={[{ pathname: entry, state: { announcement: '변경했습니다' } }]}>
+          <MemoryRouter initialEntries={[{
+            pathname: entry,
+            state: { announcement: '변경했습니다', returnTo: 'kept' },
+          }]}>
             <Routes>
               <Route element={<Layout />}>
-                <Route path={entry} element={<NavLink to={next}>next</NavLink>} />
+                <Route path={entry} element={<><NavLink to={next}>next</NavLink><ReturnState /></>} />
                 <Route path={next} element={<p>next page</p>} />
               </Route>
             </Routes>
@@ -254,6 +263,7 @@ describe('role-protected routes', () => {
 
     await resolveInitialUser(api, currentUser, currentUser.username)
     expect(await screen.findByText('변경했습니다')).toHaveAttribute('role', 'status')
+    expect(screen.getByTestId('return-state')).toHaveTextContent('kept')
     await userEvent.setup().click(screen.getByRole('link', { name: 'next' }))
 
     expect(await screen.findByText('next page')).toBeInTheDocument()

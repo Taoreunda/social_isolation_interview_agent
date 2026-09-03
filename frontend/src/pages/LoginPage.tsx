@@ -23,10 +23,12 @@ export function LoginPage() {
   const mounted = useRef(false)
   const generation = useRef(0)
   const inFlight = useRef(false)
+  const abortController = useRef<AbortController | null>(null)
 
   useEffect(() => {
     mounted.current = true
     return () => {
+      abortController.current?.abort()
       mounted.current = false
       generation.current += 1
     }
@@ -42,17 +44,20 @@ export function LoginPage() {
     }
 
     const operation = ++generation.current
+    const controller = new AbortController()
+    abortController.current = controller
     inFlight.current = true
     setError(null)
     setIsSubmitting(true)
     try {
-      const user = await login({ username, password, remember })
+      const user = await login({ username, password, remember }, controller.signal)
       if (!mounted.current || operation !== generation.current) return
       navigate(homeFor(user.role), { replace: true })
     } catch {
       if (!mounted.current || operation !== generation.current) return
       setError('로그인에 실패했습니다')
     } finally {
+      if (abortController.current === controller) abortController.current = null
       if (!mounted.current || operation !== generation.current) return
       inFlight.current = false
       setIsSubmitting(false)
