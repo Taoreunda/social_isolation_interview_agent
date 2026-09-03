@@ -1,8 +1,10 @@
+import { StrictMode, type ComponentType } from 'react'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import App, * as AppModule from '../App'
 import { ApiProvider } from './api-context'
 import type { AppApi, CurrentUser, LoginInput } from './contracts'
 import { MockAppApi } from '../mocks/mock-api'
@@ -10,6 +12,14 @@ import { AdminLayout } from '../layouts/AdminLayout'
 import { ParticipantLayout } from '../layouts/ParticipantLayout'
 import { RequireGuest, RequireRole } from './route-guards'
 import { SessionProvider, useSession } from './session-context'
+
+class TestResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+vi.stubGlobal('ResizeObserver', TestResizeObserver)
 
 const participant: CurrentUser = {
   id: 'participant-001',
@@ -84,6 +94,30 @@ function installBrowserStorage(): void {
     localStorage: { configurable: true, value: createStorage() },
     sessionStorage: { configurable: true, value: createStorage() },
   })
+}
+
+function CompleteRouteTree() {
+  const moduleWithRoutes = AppModule as unknown as { AppRoutes?: ComponentType }
+  const RouteTree = moduleWithRoutes.AppRoutes
+  return RouteTree ? <RouteTree /> : <p role="alert">지원되는 라우트 트리가 없습니다</p>
+}
+
+function LocationPath() {
+  return <output data-testid="location-path">{useLocation().pathname}</output>
+}
+
+function renderCompleteRoutes(api: AppApi, entry: string, strict = false) {
+  const routeTree = (
+    <ApiProvider api={api}>
+      <SessionProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <CompleteRouteTree />
+          <LocationPath />
+        </MemoryRouter>
+      </SessionProvider>
+    </ApiProvider>
+  )
+  return render(strict ? <StrictMode>{routeTree}</StrictMode> : routeTree)
 }
 
 function renderRoutes(api: AppApi, entry: string) {
@@ -167,6 +201,134 @@ async function resolveInitialUser(
 async function resolveInitialGuest(api: DeferredAppApi): Promise<void> {
   await resolveInitialUser(api, null)
 }
+
+describe('complete application route tree', () => {
+  beforeEach(() => {
+    installBrowserStorage()
+  })
+
+  it('waits for the guest session before redirecting the default route to /login', async () => {
+    const api = new DeferredAppApi()
+    renderCompleteRoutes(api, '/')
+
+    expect(screen.getByRole('status')).toHaveTextContent('불러오는 중')
+    expect(api.currentUserRequests).toHaveLength(1)
+    await act(async () => {
+      api.currentUserRequests[0].resolve(null)
+    })
+
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/login')
+  })
+
+  it('redirects the participant default route to /interview', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: false })
+
+    renderCompleteRoutes(api, '/')
+
+    expect(await screen.findByRole('heading', { name: '완료했습니다' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
+  })
+
+  it('redirects the admin default route to /admin', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'admin', password: 'research123!', remember: false })
+
+    renderCompleteRoutes(api, '/')
+
+    expect(await screen.findByRole('heading', { name: '검토' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/admin')
+  })
+
+  it.each([
+    { role: 'participant', entry: '/admin/participants', expectedPath: '/interview', heading: '완료했습니다' },
+    { role: 'participant', entry: '/admin/interviews/interview-001', expectedPath: '/interview', heading: '완료했습니다' },
+    { role: 'admin', entry: '/interview', expectedPath: '/admin', heading: '검토' },
+    { role: 'admin', entry: '/account/password', expectedPath: '/admin', heading: '검토' },
+  ])('redirects a $role away from the cross-role route $entry', async ({ role, entry, expectedPath, heading }) => {
+    const api = new MockAppApi()
+    await api.login({
+      username: role === 'admin' ? 'admin' : 'participant01',
+      password: 'research123!',
+      remember: false,
+    })
+
+    renderCompleteRoutes(api, entry)
+
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent(expectedPath)
+  })
+
+  it('renders the participant password route directly', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: false })
+
+    renderCompleteRoutes(api, '/account/password')
+
+    expect(await screen.findByRole('heading', { name: '비밀번호 변경' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/account/password')
+  })
+
+  it('renders an admin interview detail route directly', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'admin', password: 'research123!', remember: false })
+
+    renderCompleteRoutes(api, '/admin/interviews/interview-001')
+
+    expect(await screen.findByRole('heading', { name: '인터뷰 검토' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/admin/interviews/interview-001')
+  })
+
+  it('logs out from the complete participant route tree', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: true })
+    renderCompleteRoutes(api, '/interview')
+    await screen.findByRole('heading', { name: '완료했습니다' })
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '로그아웃' }))
+
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/login')
+    expect(await api.getCurrentUser()).toBeNull()
+  })
+
+  it('restores a remembered participant through StrictMode and a fresh API instance', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'participant01', password: 'research123!', remember: true })
+    const firstMount = renderCompleteRoutes(api, '/interview', true)
+
+    expect(await screen.findByRole('heading', { name: '완료했습니다' })).toBeInTheDocument()
+    firstMount.unmount()
+
+    renderCompleteRoutes(new MockAppApi(), '/missing-after-remount', true)
+
+    expect(await screen.findByRole('heading', { name: '완료했습니다' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
+  })
+
+  it('sends an unknown guest route through the wildcard to /login', async () => {
+    renderCompleteRoutes(new MockAppApi(), '/not-a-route')
+
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/login')
+  })
+
+  it('uses the browser route composition without requesting the legacy backend', async () => {
+    window.history.replaceState({}, '', '/not-a-route')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    try {
+      render(<StrictMode><App /></StrictMode>)
+
+      expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+      expect(window.location.pathname).toBe('/login')
+      expect(fetchSpy).not.toHaveBeenCalled()
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+})
 
 describe('role-protected routes', () => {
   beforeEach(() => {

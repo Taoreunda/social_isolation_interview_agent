@@ -1,98 +1,52 @@
-import { useEffect, useState } from 'react';
-import UserView from './UserView';
-import ReviewerView from './ReviewerView';
-import { SAGE, SAGE_LIGHT } from './components';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
-type Tab = 'user' | 'reviewer';
+import { ApiProvider } from '@/app/api-context'
+import { RequireGuest, RequireRole } from '@/app/route-guards'
+import { SessionProvider, useSession } from '@/app/session-context'
+import { AdminLayout } from '@/layouts/AdminLayout'
+import { ParticipantLayout } from '@/layouts/ParticipantLayout'
+import { MockAppApi } from '@/mocks/mock-api'
+import { AdminDashboardPage } from '@/pages/AdminDashboardPage'
+import { InterviewPage } from '@/pages/InterviewPage'
+import { InterviewReviewPage } from '@/pages/InterviewReviewPage'
+import { LoginPage } from '@/pages/LoginPage'
+import { ParticipantsPage } from '@/pages/ParticipantsPage'
+import { PasswordPage } from '@/pages/PasswordPage'
 
-function readTabFromHash(): Tab {
-  return window.location.hash === '#reviewer' ? 'reviewer' : 'user';
+const defaultApi = new MockAppApi()
+
+function DefaultRoute() {
+  const { user } = useSession()
+  const destination = user ? (user.role === 'admin' ? '/admin' : '/interview') : '/login'
+  return <Navigate replace to={destination} />
 }
 
-function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
-  const tabs: Array<{ id: Tab; label: string; icon: string }> = [
-    { id: 'user', label: '사용자 (인터뷰)', icon: '👤' },
-    { id: 'reviewer', label: '검사자 (검토)', icon: '🔍' },
-  ];
-
+export function AppRoutes() {
   return (
-    <header style={{
-      padding: '10px 24px 0', display: 'flex', alignItems: 'flex-end',
-      justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)',
-      background: 'var(--bg-card)', flexShrink: 0,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, paddingBottom: 10 }}>
-        <h1 style={{
-          fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700,
-          color: 'var(--accent)', letterSpacing: '-0.02em',
-        }}>Dabom</h1>
-        <span style={{
-          fontSize: 12, color: 'var(--text-tertiary)', letterSpacing: '0.04em',
-          textTransform: 'uppercase' as const,
-        }}>Social Isolation Assessment</span>
-      </div>
-
-      <div style={{ display: 'flex', gap: 4 }}>
-        {tabs.map(t => {
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => onChange(t.id)}
-              style={{
-                padding: '9px 18px',
-                borderRadius: '10px 10px 0 0',
-                border: '1px solid var(--border-light)',
-                borderBottom: active ? `2px solid ${SAGE}` : '1px solid var(--border-light)',
-                background: active ? SAGE_LIGHT : 'transparent',
-                color: active ? SAGE : 'var(--text-secondary)',
-                fontSize: 13, fontWeight: active ? 600 : 500,
-                cursor: 'pointer', fontFamily: 'var(--font-body)',
-                marginBottom: -1,
-              }}
-            >
-              <span style={{ marginRight: 6 }}>{t.icon}</span>{t.label}
-            </button>
-          );
-        })}
-      </div>
-    </header>
-  );
+    <Routes>
+      <Route path="/login" element={<RequireGuest><LoginPage /></RequireGuest>} />
+      <Route element={<RequireRole role="participant"><ParticipantLayout /></RequireRole>}>
+        <Route path="/interview" element={<InterviewPage />} />
+        <Route path="/account/password" element={<PasswordPage />} />
+      </Route>
+      <Route element={<RequireRole role="admin"><AdminLayout /></RequireRole>}>
+        <Route path="/admin" element={<AdminDashboardPage />} />
+        <Route path="/admin/participants" element={<ParticipantsPage />} />
+        <Route path="/admin/interviews/:interviewId" element={<InterviewReviewPage />} />
+      </Route>
+      <Route path="*" element={<DefaultRoute />} />
+    </Routes>
+  )
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>(readTabFromHash);
-
-  useEffect(() => {
-    const onHashChange = () => setTab(readTabFromHash());
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
-
-  const handleTabChange = (t: Tab) => {
-    window.location.hash = t === 'reviewer' ? '#reviewer' : '#user';
-    setTab(t);
-  };
-
   return (
-    <>
-      <TabBar tab={tab} onChange={handleTabChange} />
-      <main style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <div style={{
-          flex: 1, overflow: 'hidden',
-          display: tab === 'user' ? 'flex' : 'none',
-          flexDirection: 'column',
-        }}>
-          <UserView />
-        </div>
-        <div style={{
-          flex: 1, overflow: 'hidden',
-          display: tab === 'reviewer' ? 'flex' : 'none',
-          flexDirection: 'column',
-        }}>
-          <ReviewerView active={tab === 'reviewer'} />
-        </div>
-      </main>
-    </>
-  );
+    <ApiProvider api={defaultApi}>
+      <SessionProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </SessionProvider>
+    </ApiProvider>
+  )
 }

@@ -1,45 +1,48 @@
 # Repository Guidelines
 
 ## Active Stack and Source Layout
-The supported application is a FastAPI backend plus a React/Vite SPA. All Python code lives under `backend/`; `backend/api.py` exposes REST and SSE endpoints around the interview engine. The active UI lives under `frontend/src/`: `UserView.tsx` runs interviews, `ReviewerView.tsx` reviews saved sessions, and `api.ts` is the backend client. Do not add a second UI runtime.
 
-Core orchestration is under `backend/interview/`. `engine.py` builds the 2-node LangGraph ReAct loop, `scorecard.py` owns scorecard state and deterministic diagnosis, `tools.py` exposes the single tool schema, and `prompts.py` owns evaluation criteria. Use constants from `backend/app_core/paths.py` instead of reconstructing repository paths.
+The supported application is one FastAPI backend and one React/Vite SPA. Python code lives under `backend/`; `backend/api.py` exposes the current REST and SSE endpoints. The active frontend lives under `frontend/src/`: `App.tsx` owns providers and browser routing, `app/` owns contracts, injected API/session state, route guards, and route tests, `mocks/` owns the development-only `AppApi`, and `layouts/`, `pages/`, and `features/` implement the role-separated UI. Do not add another UI runtime or alternate entry point.
 
-## Change Contracts and Sources of Truth
-A question change must keep three locations aligned: the question definition in `interview_flow.json`, `Scorecard._build_items()` ordering in `backend/interview/scorecard.py`, and the `SECTIONS` UI grouping in `backend/api.py`. Graph routing belongs in `backend/interview/engine.py`; `interview_flow.json` contains question metadata only.
+Core interview orchestration is under `backend/interview/`. `engine.py` builds the two-node LangGraph ReAct loop, `scorecard.py` owns scorecard state and deterministic diagnosis, `tools.py` exposes the tool schema, and `prompts.py` owns evaluation criteria. Use constants from `backend/app_core/paths.py` instead of reconstructing repository paths.
 
-Diagnosis changes must update both `Scorecard.calculate()` and `calculate_with_overrides()` and add regression coverage for AI and expert results. The decorated `scorecard_tool` body is schema-only; runtime behavior is implemented by `execute_scorecard_action()` and the custom `tool_node` in `engine.py`.
+## Frontend Contracts
 
-## Build, Test, and Development Commands
-Install dependencies with `uv sync` and `cd frontend && npm install`. Start both services with `./run_web_app.sh`. It prefers FastAPI port 8001 and Vite port 5173, advances to the next free ports when needed, and prints the authoritative URLs. Logs go to `logs/api.log` and `logs/frontend.log`. Run services separately with:
+The supported routes are `/login`, participant routes `/interview` and `/account/password`, and administrator routes `/admin`, `/admin/participants`, and `/admin/interviews/:interviewId`. Server-shaped session roles select the shell; there is no role switch or hash navigation. Route guards are a UI boundary, not backend authorization.
+
+The current frontend is a fixture-backed functional mock for UI validation. `frontend/src/mocks/` is the only mock state boundary, production composition creates one stable `MockAppApi`, and tests inject a fresh API per case. The mock must not call the current unauthenticated backend. Keep `frontend/src/api.ts` and `frontend/src/types.ts` unchanged as references for the existing backend client, but do not import them into the mock application. PostgreSQL-backed authentication and API integration are the next slice in [docs/architecture.md](docs/architecture.md).
+
+Use exactly the three base colors defined in `frontend/src/styles.css`: ink `#17233C`, surface `#F6F4EE`, and accent `#2F6F68`. Derive muted, border, hover, and state colors from those tokens. Do not add gradients, promotional copy, decorative UI, emoji, or color-only status. Preserve normal page scrolling, visible focus, keyboard order, dialog Escape/focus behavior, Korean multiline readability, and 360 px layouts. Follow [PRODUCT.md](PRODUCT.md) and the frontend section of [docs/architecture.md](docs/architecture.md).
+
+## Backend Change Contracts
+
+A question change must keep `interview_flow.json`, `Scorecard._build_items()` ordering in `backend/interview/scorecard.py`, and `SECTIONS` in `backend/api.py` aligned. Graph routing belongs in `backend/interview/engine.py`; `interview_flow.json` contains question metadata only.
+
+Diagnosis changes must update both `Scorecard.calculate()` and `calculate_with_overrides()` and add AI and expert-result regression coverage. The decorated `scorecard_tool` body is schema-only; runtime behavior belongs in `execute_scorecard_action()` and the custom `tool_node` in `engine.py`. Prefer dependency injection over new module-level singletons.
+
+## Build and Verification
+
+Install with `uv sync` and `cd frontend && npm install`. Start both services with `./run_web_app.sh`; it selects available ports starting at FastAPI 8001 and Vite 5173 and prints the authoritative URLs. Logs go to `logs/api.log` and `logs/frontend.log`.
+
+Run deterministic checks from the repository root:
 
 ```bash
-uv run python -m uvicorn api:app --app-dir backend --reload --host 127.0.0.1 --port 8001
-cd frontend && npm run dev
-```
-
-Run all deterministic checks from the repository root:
-
-```bash
+(cd frontend && npm test)
+(cd frontend && npm run check:palette)
+(cd frontend && npm run build)
 uv run python tests/test_scorecard.py
 uv run python tests/test_flow_scenarios.py
 uv run python tests/test_api_persistence.py
 bash tests/test_run_web_app.sh
 bash tests/test_vite_proxy.sh
-cd frontend && npm run build
 ```
 
-The Python and shell tests are executable scripts, not a pytest suite. They must not require an API key or external network access. The frontend has no lint or test script, so `npm run build` is the type-check and bundle gate.
+Python and shell tests are executable scripts, not a pytest suite, and must not require an API key or external network. Frontend behavior changes require test-first Vitest coverage of observable states, including loading, empty, error, role routing, active interview, completion, and review where relevant. Use a fresh injected API so tests do not leak session or fixture state. `npm run build` remains the TypeScript and bundle gate.
 
-## Coding and Testing Conventions
-Follow PEP 8, four-space indentation, and type hints on public Python interfaces. Use `snake_case.py`, `CamelCase` classes, and upper snake constants such as `MAX_TURNS`. Prefer dependency injection over new module-level singletons. Frontend components use PascalCase and functions use camelCase. Keep changes narrow and preserve existing Korean domain terminology.
+## Persistence, Documentation, and Security
 
-Put Python coverage in `tests/test_*.py`, mock the LLM and filesystem, and test observable contracts rather than prompt wording. For UI changes, verify loading, empty, error, active-interview, completed, and reviewer states; include a screenshot in the PR when layout changes.
+Current LangGraph checkpoints use in-process `MemorySaver`. Disk snapshots under `data/web_sessions/` restore reviewer/display state after a restart and completed results live under `data/results/`; neither rehydrates the graph checkpoint. Do not claim an interrupted interview can continue after a backend restart. Runtime data and `logs/interview_*.json` may contain sensitive transcripts and must never be committed or attached unsanitized.
 
-## Persistence and Runtime Constraints
-LangGraph checkpoints use in-process `MemorySaver`. Disk snapshots under `data/web_sessions/` restore reviewer and display state after a restart, while completed results live under `data/results/`; neither rehydrates the graph checkpoint. Do not claim that an interrupted interview can continue after a backend restart. Runtime data and `logs/interview_*.json` may contain sensitive transcripts and must never be committed or attached unsanitized.
+Keep `README.md` as user onboarding, this file as the contributor guide, `PRODUCT.md` as product guidance, and `docs/architecture.md` as the target architecture. Do not retain completed plans, dated design drafts, fixture credentials, or agent scratch reports in tracked files.
 
-## Documentation, Commits, and Security
-Keep `README.md` as user-facing onboarding and this file as the contributor guide. Code and tests are the source of truth. Update these two files when current commands or architectural contracts change; do not retain completed plans, dated design drafts, or agent-specific duplicate guides.
-
-Use present-tense, area-prefixed commit subjects such as `feat(scorecard): handle early stop`. PRs must list user-visible effects, exact verification commands, environment-variable changes, and migrations. The API currently has no authentication and allows all CORS origins. Use real interview data only on a trusted local network or behind an authenticated reverse proxy. Secrets belong in the root `.env`; treat LangSmith traces as external disclosure and clear runs containing personal data.
+Use present-tense, area-prefixed commit subjects. PRs list user-visible effects, exact verification commands, configuration changes, and migrations. The current backend has no authentication and allows all CORS origins; use real data only on a trusted local network or behind an authenticated reverse proxy. Secrets belong in the root `.env`; treat LangSmith traces as external disclosure.
