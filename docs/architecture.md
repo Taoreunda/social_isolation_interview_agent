@@ -1,34 +1,30 @@
-# Research Web Platform Architecture
+# 연구 플랫폼 목표 아키텍처
 
-This document is the current design baseline for turning the local interview
-prototype into a closed research application. It replaces dated design drafts;
-implementation code and migrations remain the final source of truth.
+이 문서는 Dabom의 유지되는 목표 아키텍처입니다. 현재 구현과 목표 상태를 구분하며, 세부 구현과 데이터베이스 migration이 최종 동작의 기준입니다.
 
-## Goals
+## 현재 구현 상태
 
-- Support a closed cohort of roughly 200–300 participants and a small number of
-  researchers.
-- Separate participant and administrator access in both the UI and API.
-- Persist accounts, login sessions, interviews, messages, scorecards, and expert
-  reviews in PostgreSQL.
-- Resume an interview from the last committed turn after a browser refresh or
-  application restart.
-- Run locally against PostgreSQL and move to Amazon RDS for PostgreSQL by
-  changing deployment configuration, not application behavior or schema.
-- Minimize personally identifying data and keep research exports auditable.
+| 영역 | 현재 | 목표 |
+| --- | --- | --- |
+| 프론트엔드 | 역할이 분리된 React/shadcn 목 UI | 인증된 FastAPI API와 연결 |
+| 인증 | 브라우저 fixture 세션 | PostgreSQL 기반 서버 세션 |
+| 인터뷰 백엔드 | 인증 없는 FastAPI/LangGraph 프로토타입 | 역할·소유권이 적용된 동일 FastAPI 서비스 |
+| 영속성 | 프로세스 메모리와 gitignored JSON | PostgreSQL 16, AWS에서는 RDS for PostgreSQL |
+| 배포 | 로컬 개발 | 작은 EC2 애플리케이션 호스트 + private Single-AZ RDS |
 
-## Non-goals
+현재 목 UI와 FastAPI 프로토타입은 함께 실행할 수 있지만 서로 호출하지 않습니다. 인증, 권한 검사, PostgreSQL 저장 및 제한된 CORS가 구현되기 전에는 실제 연구 데이터를 입력하지 않습니다.
 
-- Public sign-up, social login, email verification, or password recovery email.
-- Mandatory password change on first login.
-- Multiple studies, organizations, or tenant isolation.
-- Multi-AZ, read replicas, RDS Proxy, Redis, or horizontal application scaling.
-- Importing gitignored prototype JSON files as production research data.
-- AWS infrastructure-as-code in the first implementation slice.
+## 결정된 범위
 
-## System boundary
+- 약 200–300명의 폐쇄형 참여자와 소수의 연구 관리자를 지원합니다.
+- 역할은 `participant`와 `admin` 두 개뿐입니다.
+- 공개 가입, 소셜 로그인, 이메일 인증, 비밀번호 복구 메일은 만들지 않습니다.
+- 최초 로그인 시 비밀번호 변경을 강제하지 않습니다.
+- 한 연구만 지원하며 조직·tenant 분리는 도입하지 않습니다.
+- PostgreSQL 기능만 사용하고 SQLite나 JSON fallback을 두지 않습니다.
+- 초기 배포는 단일 FastAPI 프로세스와 Single-AZ RDS로 시작합니다. 수평 확장, Redis, RDS Proxy, read replica와 Multi-AZ는 부하 및 운영 요구가 생길 때 검토합니다.
 
-The supported application remains one React SPA and one FastAPI service.
+## 실행 구조
 
 ```text
 Browser
@@ -39,199 +35,147 @@ Browser
       -> configured LLM provider
 ```
 
-Local development uses a containerized PostgreSQL instance. Production uses a
-small EC2 application host and a private, Single-AZ RDS for PostgreSQL instance.
-The application uses only standard PostgreSQL features available in both
-environments.
+로컬과 AWS는 같은 PostgreSQL major version과 migration을 사용합니다.
 
-Configuration is environment-based:
+- 로컬: 컨테이너 PostgreSQL 16, 호스트의 FastAPI와 Vite
+- AWS: 정적 React build와 FastAPI를 실행하는 작은 EC2, EC2 보안 그룹에서만 접근 가능한 private RDS
+- `DATABASE_URL`로 연결 대상을 선택하고 AWS 연결은 TLS 인증서를 검증합니다.
+- migration은 Alembic으로 명시적으로 실행하며 애플리케이션 시작 시 자동 적용하지 않습니다.
+- 데이터베이스 연결 실패는 readiness 실패로 처리하고 다른 저장 방식으로 전환하지 않습니다.
 
-- `DATABASE_URL` selects the PostgreSQL server and database.
-- Local connections may disable TLS; AWS connections require certificate
-  verification.
-- Database credentials are local secrets during development and come from AWS
-  Secrets Manager or Parameter Store in production.
-- Alembic migrations run as an explicit deployment step, never implicitly on
-  application startup.
+AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. 초기 구성에는 RDS 암호화, 자동 backup, 삭제 방지, private subnet과 최소 권한 security group을 적용합니다. 데이터베이스 자격 증명은 Secrets Manager 또는 Parameter Store에서 제공합니다.
 
-There is no SQLite or JSON persistence fallback. Failure to connect to the
-database makes the API unready instead of silently changing storage behavior.
+## 역할과 데이터 경계
 
-## Roles and user flows
+### 참여자
 
-The application has exactly two roles in this phase:
+- 로그인, 자동 로그인, 현재 인터뷰 시작·재개, 선택적 비밀번호 변경
+- 자신의 활성 인터뷰와 공개된 대화 메시지만 접근
+- 진단, 점수표, AI 판단, 연구자 근거, 다른 참여자 및 export에는 접근 불가
 
-- `participant`: signs in, starts or resumes the assigned interview, optionally
-  changes their password, and views a neutral completion state. Participants do
-  not see diagnoses, scorecards, other participants, or research exports.
-- `admin`: creates and disables participant accounts, assigns or resets
-  permanent passwords, reviews interviews, overrides scorecard items, and
-  exports research data.
+### 관리자
 
-There is no role switch in the browser. After login, the server-provided role
-selects the route and shell. The backend independently enforces ownership and
-role checks; hiding a frontend route is not an authorization control.
+- 참여자 계정 생성·비활성화·비밀번호 재설정
+- 인터뷰 목록·상세 조회, 점수표 동의·변경, CSV export
+- 실명 대신 가명 `participant_code` 사용
 
-Participant accounts use a pseudonymous `participant_code`. Real name, email,
-phone number, and address are not collected unless a later approved research
-protocol explicitly requires them. A participant can have historical interview
-attempts but only one active attempt. Only an administrator can archive an
-active attempt and create a replacement; a participant cannot delete or reset
-collected research data.
+브라우저 route guard는 탐색 편의 기능입니다. FastAPI가 모든 요청에서 세션, 역할과 resource 소유권을 다시 검사합니다. 보이지 않는 resource는 필요에 따라 `404`로 응답해 존재 여부를 노출하지 않습니다.
 
-## Authentication and session design
+참여자는 하나의 활성 인터뷰만 가질 수 있습니다. 과거 시도는 보관할 수 있지만, 활성 인터뷰의 archive와 교체는 관리자만 수행합니다. 참여자는 수집된 연구 데이터를 삭제하거나 초기화할 수 없습니다.
 
-Authentication is application-managed and stored in PostgreSQL.
+## 인증과 세션
 
-- Passwords are hashed with Argon2id using a maintained library. Plaintext
-  passwords are never stored or logged.
-- Login names are 3–64 lowercase ASCII characters (`a-z`, `0-9`, `.`, `_`,
-  `-`) after trimming and normalization. Passwords are 10–128 characters; the
-  administrator generator produces at least 16 random characters.
-- An administrator can enter a password or generate a strong password when
-  creating/resetting an account. The plaintext value is shown only in the
-  creation/reset response and cannot be retrieved later.
-- Assigned passwords are permanent. First login does not force a password
-  change; participants can change their password from their account page.
-- The initial administrator is created by an interactive management command run
-  through local shell or AWS Systems Manager. No bootstrap password is committed
-  or placed in a frontend bundle.
+- 사용자 이름은 trim·정규화 후 3–64자의 소문자 ASCII `a-z`, 숫자, `.`, `_`, `-`만 허용합니다.
+- 비밀번호는 10–128자이며 Argon2id로 hash합니다.
+- 관리자는 계정 생성·재설정 시 비밀번호를 직접 입력하거나 16자 이상의 안전한 값을 생성할 수 있습니다.
+- 평문 비밀번호는 해당 응답에서 한 번만 반환하고 저장하거나 로그로 남기지 않습니다.
+- 첫 관리자는 로컬 shell 또는 AWS Systems Manager에서 실행하는 대화형 관리 명령으로 생성합니다.
+- 로그인 실패 메시지는 사용자 이름의 존재 여부를 구분하지 않습니다.
+- 15분 안에 다섯 번 실패하면 계정을 15분 잠그고, 성공한 로그인은 실패 window를 초기화합니다.
 
-Successful login creates an opaque, cryptographically random session token. The
-browser receives it only as a `HttpOnly`, `SameSite=Lax` cookie; production also
-sets `Secure`. PostgreSQL stores only a hash of the token.
+로그인 성공 시 암호학적으로 안전한 opaque token을 생성합니다. 브라우저에는 `HttpOnly`, `SameSite=Lax` cookie만 전달하고 production에서는 `Secure`를 추가합니다. PostgreSQL에는 token hash만 저장합니다.
 
-- Normal sessions have a 12-hour absolute lifetime.
-- Selecting “자동 로그인” creates a 30-day session.
-- Logout revokes the current session.
-- Password change, administrator password reset, or account disable revokes all
-  sessions for that account.
-- Expired and revoked sessions are removed by a periodic cleanup command.
-- Five failed logins within 15 minutes lock the account for 15 minutes. A
-  successful login clears the failure window. Login errors do not reveal
-  whether a username exists.
+- 기본 세션의 절대 수명: 12시간
+- 자동 로그인 세션의 절대 수명: 30일
+- 로그아웃: 현재 세션 폐기
+- 비밀번호 변경·관리자 재설정·계정 비활성화: 해당 계정의 모든 세션 폐기
+- 만료·폐기 세션: 주기적인 정리 명령으로 삭제
 
-State-changing cookie-authenticated requests validate the request origin and a
-CSRF token. CORS is restricted to the configured application origin in
-development and production.
+상태 변경 요청은 허용된 origin과 CSRF token을 검증합니다. CORS는 개발·production 각각의 애플리케이션 origin으로 제한합니다.
 
-## PostgreSQL data model
+## PostgreSQL 모델
 
-Identifiers are UUIDs. Timestamps are timezone-aware UTC values. Enumerated
-states use database constraints rather than free-form strings.
+식별자는 UUID, 시각은 UTC timezone-aware timestamp를 사용합니다. 상태 값에는 데이터베이스 constraint를 둡니다.
 
 ### `user_accounts`
 
-- `id`, `username_normalized`, `username_display`, `password_hash`
-- `role` (`participant` or `admin`), `status` (`active` or `disabled`)
-- `participant_code` (nullable for admins, unique for participants)
-- failed-login counters and `locked_until`
-- `created_by`, `created_at`, `updated_at`, `password_changed_at`
+- 정규화·표시 사용자 이름, password hash, 역할, 활성 상태
+- 참여자에게만 존재하는 unique `participant_code`
+- 로그인 실패 횟수와 `locked_until`
+- 생성자와 생성·수정·비밀번호 변경 시각
 
 ### `auth_sessions`
 
-- `id`, `user_id`, `token_hash`
-- `created_at`, `last_seen_at`, `expires_at`, `revoked_at`
+- 사용자, token hash, 생성·최근 사용·만료·폐기 시각
 
 ### `interviews`
 
-- `id`, `participant_id`, `status` (`active`, `completed`, `archived`)
-- `started_at`, `updated_at`, `completed_at`
-- deterministic criteria results, diagnosis, report, and algorithm version
-- a uniqueness rule allowing at most one active interview per participant
+- 참여자, `active|completed|archived` 상태와 주요 시각
+- 진단·보고서·알고리즘 버전
+- 참여자당 활성 인터뷰 하나를 보장하는 unique rule
 
 ### `interview_messages`
 
-- `id`, `interview_id`, monotonically increasing `sequence`
-- `role` (`user` or `assistant`), `content`, `created_at`
-- required `client_turn_id` shared by the messages produced by one request
-- unique key on `(interview_id, client_turn_id, role)` for idempotent retries
+- 인터뷰별 증가하는 순서, `user|assistant` 역할, 내용과 생성 시각
+- 한 요청에서 생성된 메시지가 공유하는 `client_turn_id`
+- `(interview_id, client_turn_id, role)` unique key
 
-Only visible user and assistant messages are canonical research records. System
-prompts, tool-call payloads, and provider-specific message objects are not
-stored as conversation records.
+화면에 보이는 사용자·assistant 메시지만 연구 기록으로 저장합니다. system prompt, tool payload와 provider 전용 객체는 대화 기록으로 저장하지 않습니다.
 
 ### `scorecard_items`
 
-- `interview_id`, `question_id`
-- AI status, extracted value, rationale, clarification count, and evaluated time
-- unique key on `(interview_id, question_id)`
+- 인터뷰·문항 unique key
+- AI 상태, 추출 값, 근거, clarification 횟수와 평가 시각
 
 ### `expert_reviews`
 
-- `interview_id`, `question_id`, `reviewer_id`
-- original status, expert status, rationale, action, and reviewed time
-- unique key on `(interview_id, question_id)`
+- 인터뷰, 문항, 검토자
+- 원래 상태, 전문가 상태, 근거, 동작과 검토 시각
+- 인터뷰·문항당 최신 검토를 식별할 수 있는 constraint
 
 ### `audit_events`
 
-- actor, action, target type/ID, timestamp, and minimal structured metadata
-- records account creation/disable/reset, interview archive, expert overrides,
-  and exports
-- does not duplicate transcripts, passwords, session tokens, or diagnoses
+- actor, action, target 종류·ID, 시각과 최소 metadata
+- 계정 생성·비활성화·재설정, 인터뷰 archive, 전문가 변경과 export 기록
+- 대화 내용, 비밀번호, token, 진단은 중복 기록하지 않음
 
-No `studies` table is introduced until the application actually serves more
-than one research protocol.
+여러 연구를 실제로 운영하기 전에는 `studies` 테이블을 추가하지 않습니다.
 
-## Interview state and turn processing
+## 인터뷰 transaction
 
-PostgreSQL application tables are the canonical state. The engine no longer
-depends on process-local `_sessions`, `MemorySaver`, or runtime JSON files.
-Before each turn, the backend reconstructs the LangGraph input from ordered
-visible messages and scorecard rows. Tool messages exist only while that graph
-run is executing; the system prompt already receives the current scorecard.
+각 참여자 turn은 client가 생성한 `client_turn_id`를 포함합니다.
 
-Each participant request includes a client-generated turn ID:
+1. 세션과 인터뷰 소유권을 검증합니다.
+2. 동일 인터뷰의 동시 요청을 거부합니다.
+3. 커밋된 메시지와 점수표를 불러와 LangGraph 입력을 재구성합니다.
+4. LLM을 실행하고 임시 assistant token을 SSE로 전달합니다.
+5. 사용자 메시지, 최종 assistant 메시지, 점수표와 인터뷰 metadata를 한 transaction으로 저장합니다.
+6. transaction commit 이후에만 SSE `done`을 보냅니다.
 
-1. Authenticate and verify that the participant owns the interview.
-2. Reject a second simultaneous request for the same interview.
-3. Load the latest committed messages and scorecard.
-4. Run the interview graph and stream provisional assistant tokens.
-5. Atomically persist the user message, final assistant message, scorecard
-   changes, and interview metadata.
-6. Emit the SSE `done` event only after the transaction commits.
+초기 단일 프로세스에서는 인터뷰별 application lock으로 겹치는 turn을 `409` 처리합니다. 다중 프로세스로 확장하기 전에는 database 또는 분산 lock으로 교체해야 합니다.
 
-Because the initial target has one FastAPI process, a per-interview application
-lock rejects overlapping turns with `409`. Replacing that lock with a
-distributed mechanism is required before horizontal application scaling, which
-is outside this phase.
+LLM 실패 시 이전 커밋 상태를 유지합니다. commit 실패 시 UI는 마지막 커밋 상태를 다시 불러옵니다. 이미 커밋된 `client_turn_id`를 재전송하면 메시지를 추가하지 않고 저장된 결과를 반환합니다. 이를 통해 FastAPI 재시작 뒤에도 turn 경계에서 인터뷰를 재개할 수 있습니다. 중단된 LLM 응답의 부분 token 복구는 범위 밖입니다.
 
-If the LLM fails, the committed interview remains at the previous turn and the
-client can retry. If the database commit fails after provisional tokens were
-shown, the stream ends with an error and the UI reloads the last committed
-state. Repeating a committed client turn ID returns the stored result rather
-than adding duplicate messages.
+## API 계약
 
-This guarantees restart recovery at turn boundaries. Preserving partial token
-output during an interrupted LLM response is intentionally out of scope.
+공개 endpoint는 health/readiness와 login으로 제한합니다. 나머지는 유효한 서버 세션이 필요합니다.
 
-## API boundaries
+- 참여자 API: 현재 계정, 비밀번호 변경, 현재 인터뷰, 메시지 stream과 최종 커밋 상태
+- 관리자 API: 참여자 계정, 인터뷰 목록·상세·archive, 점수표 검토, CSV export
 
-Public endpoints are limited to health/readiness and login. All other endpoints
-require a valid session.
+참여자용 인터뷰 응답에는 진행 상태와 공개 메시지만 포함합니다. `participant_code`, 검토 상태, 점수표, AI 상태와 근거는 관리자 DTO에만 포함합니다.
 
-Participant API groups cover:
+오류 의미는 다음과 같이 고정합니다.
 
-- current account and optional password change
-- current interview creation/resumption
-- message streaming and committed interview state
+- `401`: 인증 없음·만료·폐기. 프론트엔드 세션을 지우고 로그인으로 이동
+- `403`: 유효한 사용자지만 권한 없음. 세션은 유지하고 권한 전용 상태 표시
+- `404`: 호출자에게 보이지 않는 resource
+- `409`: 활성 인터뷰 또는 동시 turn 충돌
+- `503`: PostgreSQL 등 필수 dependency 사용 불가
 
-Administrator API groups cover:
+SSE 오류는 안정적인 machine-readable code와 안전한 한국어 메시지를 사용합니다. 원본 exception과 database 세부 정보는 client에 반환하지 않습니다.
 
-- participant account list/create/disable/password reset
-- interview list/detail/archive
-- scorecard review and override
-- CSV export
+AI 상태가 `null`인 점수표 행은 검토할 수 없으며 동의와 변경을 모두 거부합니다. 인터뷰 검토 상태는 AI 상태가 non-null인 행만 대상으로 계산합니다.
 
-The API returns `401` for missing/expired authentication, `403` for valid users
-without permission, `404` when a resource is not visible to the caller, `409`
-for conflicting active interviews or turns, and `503` when PostgreSQL is
-unavailable. SSE errors use a stable machine-readable code plus safe Korean UI
-message; raw exceptions and database details are logged without being returned.
+- 검토된 행 없음: `unreviewed`
+- 일부만 검토: `in_review`
+- 모든 검토 가능 행 완료: `reviewed`
 
-## Frontend structure
+CSV export는 참여자 코드를 사용하고 audit event를 남깁니다. spreadsheet formula injection을 막도록 외부 유래 cell을 escape합니다.
 
-The React/Vite application adopts shadcn/ui components and route-based shells:
+## 프론트엔드 계약
+
+유지하는 경로는 다음과 같습니다.
 
 - `/login`
 - `/interview`
@@ -240,111 +184,41 @@ The React/Vite application adopts shadcn/ui components and route-based shells:
 - `/admin/participants`
 - `/admin/interviews/:interviewId`
 
-The visual system uses exactly three base color codes:
+역할 전환 UI는 두지 않습니다. 참여자 shell은 인터뷰와 계정 동작만, 관리자 shell은 참여자 관리와 인터뷰 검토만 제공합니다. UI 원칙과 세 가지 기본 색상은 [PRODUCT.md](../PRODUCT.md)를 따릅니다.
 
-- ink: `#17233C`
-- surface: `#F6F4EE`
-- accent: `#2F6F68`
+현재 목 데이터는 `frontend/src/mocks/` 안에만 존재합니다. 실제 API 연결 시 `AppApi` 계약 뒤의 구현을 교체하고 별도의 browser persistence를 추가하지 않습니다.
 
-Borders, hover states, and muted surfaces may use opacity derived from these
-tokens, but no additional hex, RGB, or HSL color literals. Status is never
-communicated by color alone. UI copy uses short titles, field labels, actions,
-and state messages; explanatory cards, promotional copy, decorative gradients,
-and redundant helper paragraphs are excluded.
+현재 목과 목표의 차이는 다음 API 연결 단계에서 제거합니다.
 
-The current `#user`/`#reviewer` tab switch is removed. The participant shell
-contains interview and account-password actions. The administrator shell
-contains participant management, interview review, and export navigation. Both
-shells handle loading, empty, expired-session, permission, network-error,
-active, and completed states.
+- 목 비밀번호 변경은 화면 흐름 검증을 위해 로그인 상태를 유지하지만 실제 API는 모든 세션을 폐기합니다.
+- 모든 보호 작업의 `403`을 공통 권한 상태로 표시합니다.
+- AI 상태가 null인 행의 검토와 review-status 계산을 목표 계약에 맞춥니다.
 
-The first UI milestone is a functional mock using the final routes and API
-types. It must not embed a second fake persistence system; fixture data is
-isolated behind mock API handlers and removed when real endpoints are connected.
+## 개인정보와 운영
 
-## Local and AWS deployment
+- 로그에는 request ID와 운영 metadata만 남기고 메시지, 판단 근거, 비밀번호, token과 진단을 기록하지 않습니다.
+- LangSmith 추적은 기본으로 끕니다. 실제 참여자 데이터 추적은 별도의 연구 데이터 승인 뒤에만 사용합니다.
+- raw database와 backup 접근은 배포 환경의 연구 관리자에게만 허용합니다.
+- backup 보존 기간과 최종 삭제는 승인된 연구 protocol을 따릅니다.
+- production Vite 개발 서버와 public PostgreSQL port를 허용하지 않습니다.
 
-Local development runs PostgreSQL 16 with Docker Compose while FastAPI and Vite
-can continue to run on the host. RDS uses the same PostgreSQL major version.
-Tests use a separate PostgreSQL database and apply migrations from an empty
-schema.
+## 다음 구현 순서
 
-The initial AWS target is:
+1. PostgreSQL 설정, 로컬 Compose, SQLAlchemy 모델·repository와 Alembic migration을 추가합니다.
+2. 비밀번호·세션 service, 최초 관리자 명령, login/logout, CSRF와 역할 dependency를 구현합니다.
+3. 인터뷰, 메시지, 점수표, 검토와 export를 repository로 옮깁니다.
+4. React `AppApi`를 인증된 endpoint에 연결하고 위의 목 차이를 제거합니다.
+5. 기존 `_sessions`, `MemorySaver` checkpoint 의존, JSON storage와 transcript logging을 활성 경로에서 제거하고 CORS를 제한합니다.
+6. 로컬 복구·동시성 검증 뒤 EC2/RDS 배포 설정을 추가합니다.
 
-- EC2 `t4g.small` for the reverse proxy, React static build, and FastAPI
-- RDS for PostgreSQL `db.t4g.micro`, Single-AZ, private access, gp3 storage
-- KMS encryption, TLS certificate verification, automated backups, deletion
-  protection, and a security group accepting PostgreSQL only from the EC2
-  application security group
-- no production Vite development server and no publicly reachable PostgreSQL
-  port
+## 연구 사용 전 통과 조건
 
-Application code does not depend on AWS SDKs for normal database access. Moving
-from local PostgreSQL to RDS consists of provisioning infrastructure, applying
-the same Alembic migrations, supplying secrets and TLS configuration, and
-deploying the application build.
-
-## Logging and research-data controls
-
-- Application logs contain request IDs and operational metadata, not message
-  text, score rationales, passwords, tokens, or diagnoses.
-- LangSmith tracing remains off by default. Enabling it with real participant
-  data requires an explicit research-data decision outside application code.
-- CSV exports use participant codes rather than usernames and create an audit
-  event.
-- Raw database access and backups are restricted to the research administrators
-  defined by the deployment environment.
-- Backup retention and final deletion follow the approved research protocol;
-  application defaults do not override that policy.
-
-## Verification strategy
-
-1. Unit tests cover username normalization, Argon2 verification, token hashing,
-   expiry, revocation, role checks, and deterministic score calculation.
-2. PostgreSQL integration tests apply every Alembic migration to an empty
-   database and exercise account, session, interview, review, and export
-   repositories.
-3. API tests cover login/logout, auto-login expiry, CSRF, participant ownership,
-   administrator permissions, account disable/reset, and generic login errors.
-4. Interview tests use a fake LLM to prove that committed turns resume after
-   application reconstruction and that duplicate client turn IDs are idempotent.
-5. Frontend tests cover route guards and major login, participant, and admin
-   states; the existing production build remains a required gate.
-6. A local smoke test starts a clean PostgreSQL container, runs migrations,
-   creates an admin through the management command, completes a mocked
-   interview, restarts FastAPI, and resumes the stored result.
-7. Before AWS data collection, a backup restoration drill and a modest
-   concurrent-session test with a fake LLM are required.
-
-## Delivery sequence
-
-1. Replace the tabbed frontend with a shadcn/ui functional mock of the login,
-   participant, and administrator routes; validate the workflows before backend
-   integration.
-2. Add PostgreSQL configuration, local Compose service, SQLAlchemy models,
-   repositories, and Alembic migrations.
-3. Add password/session services, bootstrap-admin command, authentication API,
-   CSRF protection, and role dependencies.
-4. Move interview, message, scorecard, review, and export behavior from
-   in-memory/JSON storage to repositories, then connect the approved UI mock to
-   the authenticated APIs.
-5. Remove obsolete JSON storage and transcript logging, tighten CORS, and update
-   `README.md` and `AGENTS.md` to describe only the supported workflow.
-6. Add the EC2/RDS deployment configuration after local behavior and restore
-   tests pass.
-
-## Acceptance criteria
-
-- A fresh clone can start PostgreSQL locally, apply migrations, create the first
-  administrator, and run the application using documented commands.
-- Administrators can centrally create, disable, and reset participant accounts;
-  there is no public registration path.
-- Participants and administrators cannot access each other's protected data or
-  routes outside their role.
-- Optional password changes work without a forced first-login change, and
-  automatic login survives browser restarts until its configured expiry.
-- An interview resumes from the last committed turn after FastAPI restarts.
-- No active endpoint reads or writes `_sessions`, `MemorySaver`, or JSON result
-  files.
-- The same migrations and application code run against local PostgreSQL and RDS
-  for PostgreSQL.
+- 빈 PostgreSQL에 모든 migration을 적용하고 첫 관리자를 생성할 수 있습니다.
+- 로그인·로그아웃·자동 로그인·만료·CSRF·계정 잠금과 세션 폐기 테스트가 통과합니다.
+- 참여자와 관리자가 상대 역할의 route와 데이터에 접근할 수 없습니다.
+- 중복 turn, LLM 실패, database 실패와 FastAPI 재시작 뒤 마지막 커밋 상태가 유지됩니다.
+- 활성 endpoint가 `_sessions`, `MemorySaver` 또는 JSON 결과 파일을 읽거나 쓰지 않습니다.
+- frontend route·상태 테스트와 desktop/360px 브라우저 smoke test가 통과합니다.
+- 실제 export 전에 CSV formula-injection 테스트가 통과합니다.
+- backup 복원 연습과 예상 동시 사용자 부하 시험을 완료합니다.
+- 같은 migration과 애플리케이션 build가 로컬 PostgreSQL과 RDS에서 동작합니다.

@@ -1,37 +1,36 @@
-# Product
+# Dabom 제품 원칙
 
-## Register
+## 사용자와 목적
 
-product
+Dabom은 약 200–300명의 폐쇄형 연구 참여자와 소수의 연구 관리자를 위한 구조화된 사회적 고립 인터뷰 도구입니다.
 
-## Users
+- 참여자는 로그인하여 자신에게 배정된 인터뷰를 시작하거나 이어서 진행하고, 필요할 때 비밀번호를 변경합니다.
+- 관리자는 가명 계정을 만들고 비활성화하며, 인터뷰 진행 상태와 점수표를 검토하고 연구 데이터를 내보냅니다.
 
-The product serves a closed research cohort of roughly 200–300 participants and a small team of research administrators. Participants sign in from their own device to complete or resume one assigned structured interview. Administrators work in a denser operational flow to create pseudonymous accounts, monitor interviews, review scorecard decisions, and export research data.
+참여자는 진단, 점수표, AI 판단 근거, 다른 참여자 또는 연구자 전용 정보를 볼 수 없어야 합니다. 관리자는 실명 대신 참여자 코드를 사용하며 불필요한 개인정보를 수집하지 않습니다.
 
-## Product Purpose
+## 경험 원칙
 
-Dabom conducts a structured social-isolation interview and gives researchers an auditable review workflow while keeping the participant experience neutral. Success means a participant can complete the interview without seeing diagnostic or research-only information, and an administrator can manage the cohort and review committed results without collecting unnecessary identity data.
+1. 현재 작업에 필요한 정보와 동작만 보여줍니다.
+2. 참여자와 관리자 화면, 데이터 및 권한을 섞지 않습니다.
+3. 로딩, 실패, 재시도, 완료, 검토 상태를 짧고 명확하게 표시합니다.
+4. 익숙한 폼, 표, 대화상자와 탐색 방식을 사용합니다.
+5. 연구 도구답게 차분하고 중립적인 문구를 사용하며 진단을 암시하지 않습니다.
 
-## Brand Personality
+공개 가입, 소셜 로그인, 역할 전환, 온보딩 투어, 마케팅 문구, 자격 증명 힌트는 제공하지 않습니다.
 
-Calm, restrained, trustworthy. Copy is short and literal. The interface should feel like a focused research instrument rather than a consumer service or a clinical diagnosis screen.
+## 시각 체계
 
-## Anti-references
+기본 색상은 정확히 세 개입니다.
 
-- Marketing-style SaaS pages, onboarding tours, welcome copy, and feature explanations.
-- Public registration, social-login prompts, role switchers, and credential hints.
-- Decorative gradients, illustrations, emoji, excessive color, and nested card layouts.
-- Participant screens that expose diagnosis, scorecards, researcher language, or other participants.
-- Administrator screens that substitute decoration for compact tables, explicit actions, and auditable state.
+- ink `#17233C`
+- surface `#F6F4EE`
+- accent `#2F6F68`
 
-## Design Principles
+경계선, hover, muted 상태는 이 색상에서만 파생합니다. 그라데이션, 장식용 일러스트, 이모지, 중첩 카드, 불필요한 설명 문단을 추가하지 않습니다. 상태는 색상만으로 전달하지 않습니다.
 
-1. Put the current task first. Each screen exposes only the actions needed for the participant or administrator workflow.
-2. Keep authority boundaries visible. Participant and administrator routes, navigation, data, and actions never blend.
-3. Protect research privacy by default. Prefer participant codes, omit unnecessary identity, and never retain plaintext credentials in the interface.
-4. Show committed state clearly. Loading, retry, completion, review, and disabled states use short text and predictable controls.
-5. Favor familiar controls over novelty. Consistent forms, tables, dialogs, and navigation should disappear into the work.
+## 접근성과 신뢰
 
-## Accessibility & Inclusion
+키보드 조작, 명확한 focus, 연결된 label, 스크린리더 상태 알림, 논리적인 읽기 순서를 유지합니다. 360px와 데스크톱 너비에서 사용할 수 있어야 하며, 한국어 여러 줄 입력과 reduced-motion 환경을 지원합니다.
 
-Support keyboard operation, visible focus, correctly associated labels, screen-reader status announcements, and a logical reading order. State and role are never communicated by color alone. Layouts remain usable at 360 px and desktop widths, Korean multiline content stays readable, and nonessential motion is avoided or respects reduced-motion preferences.
+평문 비밀번호는 생성 또는 재설정 직후 한 번만 표시하고 보관하지 않습니다. 참가자 메시지와 연구 결과는 커밋된 상태를 기준으로 보여주며, 실패한 요청은 중복 저장 없이 재시도할 수 있어야 합니다.
