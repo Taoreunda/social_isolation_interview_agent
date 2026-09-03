@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
 import type { AppApi, InterviewDetail, InterviewListItem } from '@/app/contracts'
@@ -69,6 +69,11 @@ function renderReview(api: AppApi, path = '/admin/interviews/interview-001') {
   )
 }
 
+function RouteHarness() {
+  const navigate = useNavigate()
+  return <><button onClick={() => navigate('/admin/interviews/interview-002')} type="button">B 열기</button><InterviewReviewPage /></>
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -77,6 +82,7 @@ function deferred<T>() {
 }
 
 describe('administrator interview review', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
   it('shows total, active, completed, and unreviewed counts', async () => {
     const api = createApi({ listInterviews: vi.fn().mockResolvedValue([
       { ...detail, id: 'one', status: 'active', reviewStatus: 'in_review' },
@@ -96,6 +102,20 @@ describe('administrator interview review', () => {
 
     const link = await screen.findByRole('link', { name: /P-001/ })
     expect(link).toHaveAttribute('href', '/admin/interviews/interview-001')
+  })
+
+  it('keeps queue and scorecard headers accessible on mobile-sized layouts', async () => {
+    const api = createApi()
+    renderDashboard(api)
+    expect(await screen.findByRole('table', { name: '인터뷰 대기열' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '수정 시각' })).toBeInTheDocument()
+
+    renderReview(api)
+    expect(await screen.findByRole('table', { name: '점수표' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'AI 판정' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '전문가 판정' })).toBeInTheDocument()
+    expect(screen.getByText('AI:').className).toContain('sm:hidden')
+    expect(screen.getByText('전문가:').className).toContain('sm:hidden')
   })
 
   it('shows participant code rather than personal identity', async () => {
@@ -202,5 +222,45 @@ describe('administrator interview review', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'q1 변경' }))
     expect(screen.getByLabelText('근거')).toHaveValue('')
     page.unmount()
+  })
+
+  it('does not let a pending A review block or replace B', async () => {
+    const reviewA = deferred<InterviewDetail>()
+    const reviewB = deferred<InterviewDetail>()
+    const detailB = clone({ ...detail, id: 'interview-002', participantCode: 'P-002', scorecard: [{ ...detail.scorecard[0], value: 'B 값' }] })
+    const api = createApi({
+      getInterview: vi.fn((id: string) => Promise.resolve(id === 'interview-002' ? detailB : clone(detail))),
+      reviewScorecard: vi.fn((input) => input.interviewId === 'interview-002' ? reviewB.promise : reviewA.promise),
+    })
+    render(<ApiProvider api={api}><MemoryRouter initialEntries={['/admin/interviews/interview-001']}><Routes><Route path="/admin/interviews/:interviewId" element={<RouteHarness />} /></Routes></MemoryRouter></ApiProvider>)
+    await screen.findByText('P-001')
+    fireEvent.click(screen.getByRole('button', { name: 'q1 동의' }))
+    fireEvent.click(screen.getByRole('button', { name: 'B 열기' }))
+    expect(await screen.findByText('P-002')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'q1 동의' }))
+    expect(api.reviewScorecard).toHaveBeenCalledTimes(2)
+    await act(async () => reviewA.resolve(clone({ ...detail, scorecard: [{ ...detail.scorecard[0], value: 'A 늦은 값' }] })))
+    expect(screen.queryByText('A 늦은 값')).not.toBeInTheDocument()
+    await act(async () => reviewB.resolve(clone({ ...detailB, scorecard: [{ ...detailB.scorecard[0], value: 'B 확정 값' }] })))
+    expect(await screen.findByText('B 확정 값')).toBeInTheDocument()
+  })
+
+  it('defers one CSV URL revoke until after one append, click, and removal', async () => {
+    const api = createApi()
+    renderReview(api)
+    await screen.findByText('P-001')
+    vi.useFakeTimers()
+    const createObjectURL = vi.fn(() => 'blob:review')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+    const append = vi.spyOn(document.body, 'appendChild')
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    fireEvent.click(screen.getByRole('button', { name: 'CSV 다운로드' }))
+    await act(async () => { await Promise.resolve() })
+    expect(append).toHaveBeenCalledOnce()
+    expect(click).toHaveBeenCalledOnce()
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+    act(() => vi.runOnlyPendingTimers())
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
   })
 })
