@@ -7,12 +7,12 @@
 | 영역 | 현재 | 목표 |
 | --- | --- | --- |
 | 프론트엔드 | 역할이 분리된 React/shadcn 목 UI | 인증된 FastAPI API와 연결 |
-| 인증 | 브라우저 fixture 세션 | PostgreSQL 기반 서버 세션 |
+| 인증 | PostgreSQL 기반 서버 세션과 계정 관리 API, React 미연결 | React 로그인·계정·관리 화면과 연결 |
 | 인터뷰 백엔드 | 인증 없는 FastAPI/LangGraph 프로토타입 | 역할·소유권이 적용된 동일 FastAPI 서비스 |
-| 영속성 | 프로세스 메모리와 gitignored JSON | PostgreSQL 16, AWS에서는 RDS for PostgreSQL |
-| 배포 | 로컬 개발 | 작은 EC2 애플리케이션 호스트 + private Single-AZ RDS |
+| 영속성 | 인증은 PostgreSQL, 인터뷰는 프로세스 메모리와 gitignored JSON | 전체 PostgreSQL 16, AWS에서는 RDS for PostgreSQL |
+| 배포 | 로컬 PostgreSQL Compose와 호스트 애플리케이션 | 작은 EC2 애플리케이션 호스트 + private Single-AZ RDS |
 
-현재 목 UI와 FastAPI 프로토타입은 함께 실행할 수 있지만 서로 호출하지 않습니다. 인증, 권한 검사, PostgreSQL 저장 및 제한된 CORS가 구현되기 전에는 실제 연구 데이터를 입력하지 않습니다.
+현재 목 UI와 FastAPI는 함께 실행할 수 있지만 UI는 fixture만 호출합니다. 새 `/api/auth/*`와 `/api/admin/participants*`에는 PostgreSQL 저장, 제한된 CORS, cookie 세션, CSRF와 역할 검사가 구현되어 있습니다. 반면 기존 인터뷰 endpoint에는 세션·역할·소유권 검사가 없고 PostgreSQL에 저장되지 않습니다. React 연결과 인터뷰 경계 전환이 모두 끝나기 전에는 실제 연구 데이터를 입력하지 않습니다.
 
 ## 결정된 범위
 
@@ -67,8 +67,8 @@ AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. �
 
 - 사용자 이름은 trim·정규화 후 3–64자의 소문자 ASCII `a-z`, 숫자, `.`, `_`, `-`만 허용합니다.
 - 비밀번호는 10–128자이며 Argon2id로 hash합니다.
-- 관리자는 계정 생성·재설정 시 비밀번호를 직접 입력하거나 16자 이상의 안전한 값을 생성할 수 있습니다.
-- 평문 비밀번호는 해당 응답에서 한 번만 반환하고 저장하거나 로그로 남기지 않습니다.
+- 관리자는 계정 생성·재설정 시 비밀번호를 직접 입력하거나 기본 20자의 안전한 값을 생성할 수 있습니다.
+- 생성된 평문 비밀번호만 해당 응답에서 한 번 반환하며 저장하거나 로그로 남기지 않습니다. 직접 입력한 비밀번호는 응답에 반환하지 않습니다.
 - 첫 관리자는 로컬 shell 또는 AWS Systems Manager에서 실행하는 대화형 관리 명령으로 생성합니다.
 - 로그인 실패 메시지는 사용자 이름의 존재 여부를 구분하지 않습니다.
 
@@ -92,13 +92,15 @@ AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. �
 - 비밀번호 변경·관리자 재설정·계정 비활성화·관리자 잠금: 해당 계정의 모든 세션 폐기
 - 만료·폐기 세션: 주기적인 정리 명령으로 삭제
 
-`last_seen_at` 갱신은 요청마다 쓰지 않고 일정 간격으로 제한합니다. rolling 연장 여부는 서버가 계산하며 client cookie만으로 만료를 늘릴 수 없습니다.
+`last_seen_at` 갱신은 요청마다 쓰지 않고 15분 간격으로 제한합니다. rolling 연장 여부는 서버가 계산하며 client cookie만으로 만료를 늘릴 수 없습니다.
 
-상태 변경 요청은 허용된 origin과 CSRF token을 검증합니다. CORS는 개발·production 각각의 애플리케이션 origin으로 제한합니다.
+상태 변경 요청은 허용된 origin과 double-submit CSRF token의 cookie·header·데이터베이스 hash를 검증합니다. CORS는 개발·production 각각의 애플리케이션 origin으로 제한합니다.
 
 ## PostgreSQL 모델
 
 식별자는 UUID, 시각은 UTC timezone-aware timestamp를 사용합니다. 상태 값에는 데이터베이스 constraint를 둡니다.
+
+현재 migration `20260904_0001`에는 다음 세 테이블이 구현되어 있습니다.
 
 ### `user_accounts`
 
@@ -110,7 +112,15 @@ AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. �
 
 ### `auth_sessions`
 
-- 사용자, token hash, session 종류, 생성·최근 사용·rolling 만료·절대 만료·폐기 시각
+- 사용자, token hash, CSRF token hash, session 종류, 생성·최근 사용·rolling 만료·절대 만료·폐기 시각
+
+### `audit_events`
+
+- actor, action, target 종류·ID, 시각과 최소 metadata
+- 계정 생성·비활성화·재설정·잠금·해제 기록
+- 비밀번호와 session·CSRF token 원문은 기록하지 않음
+
+아래 인터뷰 관련 테이블은 아직 목표 모델이며 migration에 포함되지 않았습니다.
 
 ### `interviews`
 
@@ -137,12 +147,6 @@ AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. �
 - 원래 상태, 전문가 상태, 근거, 동작과 검토 시각
 - 인터뷰·문항당 최신 검토를 식별할 수 있는 constraint
 
-### `audit_events`
-
-- actor, action, target 종류·ID, 시각과 최소 metadata
-- 계정 생성·비활성화·재설정·잠금·해제, 인터뷰 archive, 전문가 변경과 export 기록
-- 대화 내용, 비밀번호, token, 진단은 중복 기록하지 않음
-
 여러 연구를 실제로 운영하기 전에는 `studies` 테이블을 추가하지 않습니다.
 
 ## 인터뷰 transaction
@@ -162,10 +166,25 @@ LLM 실패 시 이전 커밋 상태를 유지합니다. commit 실패 시 UI는 
 
 ## API 계약
 
-공개 endpoint는 health/readiness와 login으로 제한합니다. 나머지는 유효한 서버 세션이 필요합니다.
+현재 구현된 인증 API는 다음과 같습니다.
 
-- 참여자 API: 현재 계정, 비밀번호 변경, 현재 인터뷰, 메시지 stream과 최종 커밋 상태
-- 관리자 API: 참여자 계정·잠금 해제, 인터뷰 목록·상세·archive, 점수표 검토, CSV export
+- `GET /api/health`: 프로세스 liveness
+- `GET /api/ready`: PostgreSQL readiness
+- `POST /api/auth/login`: 일반 또는 자동 로그인 세션 생성
+- `GET /api/auth/me`: 현재 계정 조회
+- `POST /api/auth/logout`: 현재 세션 폐기
+- `POST /api/auth/password`: 본인 비밀번호 변경과 모든 세션 폐기
+- `GET|POST /api/admin/participants`: 참여자 목록·생성
+- `POST /api/admin/participants/{participant_id}/password`: 비밀번호 재설정
+- `POST /api/admin/participants/{participant_id}/disable`: 계정 비활성화
+- `POST /api/admin/participants/{participant_id}/unlock`: 관리자 잠금 해제
+
+login 외의 인증 endpoint는 유효한 서버 세션을 요구하고, 관리자 endpoint는 역할을 추가로 검사합니다. 상태 변경 endpoint는 허용된 origin과 CSRF 검사를 모두 요구합니다.
+
+기존 `/api/start`, `/api/message`, `/api/stream`, `/api/review`, `/api/sessions`, `/api/csv`는 이전 프로토타입 계약이며 아직 공개 상태입니다. 아래 인터뷰 API 계약으로 교체되기 전에는 보호된 API로 간주하지 않습니다.
+
+- 목표 참여자 API: 현재 인터뷰, 메시지 stream과 최종 커밋 상태
+- 목표 관리자 API: 인터뷰 목록·상세·archive, 점수표 검토, CSV export
 
 참여자용 인터뷰 응답에는 진행 상태와 공개 메시지만 포함합니다. `participant_code`, 검토 상태, 점수표, AI 상태와 근거는 관리자 DTO에만 포함합니다.
 
@@ -218,20 +237,20 @@ CSV export는 참여자 코드를 사용하고 audit event를 남깁니다. spre
 
 ## 다음 구현 순서
 
-1. PostgreSQL 설정, 로컬 Compose, SQLAlchemy 모델·repository와 Alembic migration을 추가합니다.
-2. 비밀번호·rolling 세션 service, 2단계 로그인 잠금, 관리자 잠금 해제, 최초 관리자 명령, login/logout, CSRF와 역할 dependency를 구현합니다.
-3. 인터뷰, 메시지, 점수표, 검토와 export를 repository로 옮깁니다.
+1. **완료:** PostgreSQL 설정, 로컬 Compose, 인증 모델·repository와 Alembic migration.
+2. **완료:** 비밀번호·rolling 세션 service, 2단계 로그인 잠금, 관리자 잠금 해제, 최초 관리자 명령, login/logout, CSRF와 역할 dependency.
+3. 인터뷰, 메시지, 점수표, 검토와 export를 PostgreSQL repository로 옮깁니다.
 4. React `AppApi`를 인증된 endpoint에 연결하고 위의 목 차이를 제거합니다.
-5. 기존 `_sessions`, `MemorySaver` checkpoint 의존, JSON storage와 transcript logging을 활성 경로에서 제거하고 CORS를 제한합니다.
+5. 기존 `_sessions`, `MemorySaver` checkpoint 의존, JSON storage와 transcript logging을 활성 경로에서 제거합니다.
 6. 로컬 복구·동시성 검증 뒤 EC2/RDS 배포 설정을 추가합니다.
 
 ## 연구 사용 전 통과 조건
 
-- 빈 PostgreSQL에 모든 migration을 적용하고 첫 관리자를 생성할 수 있습니다.
-- 24시간 일반 세션, 30일 rolling·90일 상한 자동 로그인, 갱신 임계점과 만료 테스트가 통과합니다.
-- 첫 5회 실패의 임시 잠금, 다음 5회의 관리자 잠금, 성공 초기화, 관리자 해제와 세션 폐기 테스트가 통과합니다.
-- 로그인·로그아웃·CSRF와 generic 로그인 오류 테스트가 통과합니다.
-- 참여자와 관리자가 상대 역할의 route와 데이터에 접근할 수 없습니다.
+- **인증 범위 완료:** 빈 PostgreSQL에 migration을 적용하고 첫 관리자를 생성할 수 있습니다.
+- **인증 범위 완료:** 24시간 일반 세션, 30일 rolling·90일 상한 자동 로그인, 갱신 임계점과 만료 테스트가 통과합니다.
+- **인증 범위 완료:** 첫 5회 실패의 임시 잠금, 다음 5회의 관리자 잠금, 성공 초기화, 관리자 해제와 세션 폐기 테스트가 통과합니다.
+- **인증 범위 완료:** 로그인·로그아웃·CSRF, generic 로그인 오류와 참여자 관리 역할 검사가 통과합니다.
+- **남음:** 참여자와 관리자가 상대 역할의 인터뷰 route와 데이터에 접근할 수 없습니다.
 - 중복 turn, LLM 실패, database 실패와 FastAPI 재시작 뒤 마지막 커밋 상태가 유지됩니다.
 - 활성 endpoint가 `_sessions`, `MemorySaver` 또는 JSON 결과 파일을 읽거나 쓰지 않습니다.
 - frontend route·상태 테스트와 desktop/360px 브라우저 smoke test가 통과합니다.
