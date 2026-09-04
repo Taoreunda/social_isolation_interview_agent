@@ -47,6 +47,7 @@ class AuthContext:
     account: UserAccount
     auth_session: AuthSession
     cookie_renewed: bool
+    authenticated_at: datetime
 
 
 class AuthenticationRequired(Exception):
@@ -225,6 +226,7 @@ class AuthenticationService:
                     account=auth_session.user,
                     auth_session=auth_session,
                     cookie_renewed=cookie_renewed,
+                    authenticated_at=now,
                 )
 
         if context is None:

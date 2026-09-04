@@ -21,12 +21,15 @@ from app_core.paths import DATA_DIR  # noqa: E402  (needs sys.path bootstrap abo
 WEB_SESSIONS_DIR = DATA_DIR / "web_sessions"
 RESULTS_DIR = DATA_DIR / "results"
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app_core.config import bootstrap
+from app_core.database import check_database
+from auth.dependencies import get_allowed_origins
+from auth.router import router as auth_router
 from interview.engine import InterviewEngine
 from interview.scorecard import Scorecard, calculate_with_overrides
 
@@ -36,10 +39,12 @@ app = FastAPI(title="Social Isolation Interview API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=get_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH"],
+    allow_headers=["Content-Type", "X-CSRF-Token"],
 )
+app.include_router(auth_router, prefix="/api")
 
 # ── Session storage ──
 # In-memory per-session engines (single-server deployment)
@@ -812,6 +817,16 @@ async def load_session(session_id: str):
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/ready")
+def readiness():
+    if not check_database():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="필수 서비스를 사용할 수 없습니다.",
+        )
+    return {"status": "ready"}
 
 
 if __name__ == "__main__":
