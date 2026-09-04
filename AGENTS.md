@@ -2,9 +2,9 @@
 
 ## Current State
 
-This repository contains one React/Vite frontend and one FastAPI service. The supported frontend remains the role-separated fixture-backed mock and does not yet call FastAPI. PostgreSQL-backed account, authentication, session, lockout, CSRF, and participant-administration endpoints are implemented. The legacy interview endpoints remain unauthenticated and keep interview state in process memory and gitignored JSON files.
+This repository contains one React/Vite frontend and one FastAPI service. The frontend uses the live HTTP adapter by default for PostgreSQL-backed account, authentication, session, lockout, CSRF, and participant administration. The legacy interview endpoints remain unauthenticated and keep interview state in process memory and gitignored JSON files, so the live adapter deliberately does not call them.
 
-The target is a single React SPA and FastAPI service backed completely by PostgreSQL locally and Amazon RDS for PostgreSQL in AWS. Read the current/target split in [docs/architecture.md](docs/architecture.md); do not infer that implemented account auth protects the old interview routes. Do not use real research data until interview authorization, ownership, and PostgreSQL persistence are also implemented and the React app uses the live API.
+The target is a single React SPA and FastAPI service backed completely by PostgreSQL locally and Amazon RDS for PostgreSQL in AWS. Read the current/target split in [docs/architecture.md](docs/architecture.md); do not infer that implemented account auth protects the old interview routes. Do not use real research data until interview authorization, ownership, and PostgreSQL persistence are also implemented and connected.
 
 Do not introduce Streamlit, Gradio, another frontend runtime, hash-based navigation, or a role switch. `presentation/` is user-owned material outside application work unless the user explicitly places it in scope.
 
@@ -20,13 +20,13 @@ Do not introduce Streamlit, Gradio, another frontend runtime, hash-based navigat
 - `backend/app_core/`: environment, paths, and database configuration
 - `backend/storage/`, `backend/logs/`: temporary JSON persistence and transcript logging to remove after PostgreSQL migration
 - `frontend/src/App.tsx`: provider composition and route tree
-- `frontend/src/app/`: `AppApi` contracts, session state, route guards, and navigation announcements
-- `frontend/src/mocks/`: the only frontend fixture and mock-state boundary
+- `frontend/src/app/`: live HTTP adapter, `AppApi` contracts, session state, route guards, and navigation announcements
+- `frontend/src/mocks/`: explicit mock-mode and test-only fixture boundary
 - `frontend/src/layouts/`, `pages/`, `features/`: role-separated UI
 - `frontend/src/components/ui/`: shared shadcn/ui primitives
 - `interview_flow.json`: question metadata
 
-`frontend/src/api.ts` and `frontend/src/types.ts` are reference-only clients for the old backend contract. Do not import them into the mock application. Replace or remove them when authenticated APIs are connected.
+`HttpAppApi` is the default runtime implementation. Keep `MockAppApi` opt-in through `VITE_APP_MODE=mock`; never make fixture mode the production fallback. Until protected interview endpoints exist, live interview methods must fail locally without calling `/api/start`, `/api/message`, `/api/stream`, `/api/review`, `/api/sessions`, or `/api/csv`.
 
 ## Frontend Contracts
 
@@ -46,7 +46,7 @@ A question change must keep `interview_flow.json`, `Scorecard._build_items()` or
 
 Diagnosis changes update both `Scorecard.calculate()` and `calculate_with_overrides()` and add AI and expert-result regressions. The decorated `scorecard_tool` body is schema-only; runtime behavior belongs in `execute_scorecard_action()` and the custom tool node. Prefer injected storage and LLM clients over new module-level singletons.
 
-Auth persistence uses Alembic migrations and SQLAlchemy repositories against PostgreSQL only; never add SQLite or JSON fallback. Run migrations explicitly instead of at application startup. Real password changes, administrator resets, account disable, automatic administrator lock, and administrator unlock revoke all sessions for that account. The current mock intentionally keeps the user signed in after a password change for UI flow validation.
+Auth persistence uses Alembic migrations and SQLAlchemy repositories against PostgreSQL only; never add SQLite or JSON fallback. Run migrations explicitly instead of at application startup. Password changes, administrator resets, account disable, automatic administrator lock, and administrator unlock revoke all sessions for that account. Keep the mock and live frontend behavior aligned: after a successful password change, clear the client identity and return to login.
 
 Preserve the implemented state machine in `docs/architecture.md`: a fixed 24-hour normal session; a 30-day rolling remembered session renewed at seven days remaining and capped at 90 days; five failures for a 15-minute temporary lock; then five more failures for an administrator-released lock. Attempts during temporary lock do not advance the second stage. Successful login resets the failure stage. Keep row locks around login transitions, store only session/CSRF token hashes, and keep login failure responses generic.
 
@@ -59,7 +59,7 @@ uv sync
 (cd frontend && npm install)
 ```
 
-Run the application with `./run_web_app.sh`. It selects available ports starting at FastAPI `8001` and Vite `5173`, then prints the authoritative URLs.
+Run the application with `./run_web_app.sh`. It selects available ports starting at FastAPI `8001` and Vite `5173`, passes the selected frontend origins to FastAPI, then prints the authoritative URLs.
 
 Start the real PostgreSQL test service before auth tests:
 
@@ -87,7 +87,7 @@ Legacy Python and shell tests are executable scripts; auth tests use pytest and 
 
 Account/session/audit state is durable in PostgreSQL migration `20260904_0001`. Current LangGraph checkpoints still use process-local `MemorySaver`; `data/web_sessions/` restores reviewer/display snapshots and `data/results/` stores completed results, but neither restores an interrupted graph checkpoint. Never claim restart-safe interview continuation until PostgreSQL repositories replace this path.
 
-`DATABASE_URL` must use PostgreSQL with psycopg 3. Production cookies require `AUTH_COOKIE_SECURE=true`, and `AUTH_ALLOWED_ORIGINS` must contain only deployed application origins. `/api/health` is liveness; `/api/ready` must fail when PostgreSQL is unavailable. Use `backend/manage.py bootstrap-admin` only from a trusted shell/SSM session and schedule `cleanup-sessions` operationally.
+`DATABASE_URL` must use PostgreSQL with psycopg 3. `VITE_AUTH_CSRF_COOKIE` must equal `AUTH_CSRF_COOKIE`. Production cookies require `AUTH_COOKIE_SECURE=true`, and `AUTH_ALLOWED_ORIGINS` must contain only deployed application origins. `/api/health` is liveness; `/api/ready` must fail when PostgreSQL is unavailable. Use `backend/manage.py bootstrap-admin` only from a trusted shell/SSM session and schedule `cleanup-sessions` operationally.
 
 Runtime data, `logs/interview_*.json`, and LangSmith traces may contain sensitive content. Never commit or attach them unsanitized. Secrets belong in the root `.env`.
 

@@ -6,13 +6,13 @@
 
 | 영역 | 현재 | 목표 |
 | --- | --- | --- |
-| 프론트엔드 | 역할이 분리된 React/shadcn 목 UI | 인증된 FastAPI API와 연결 |
-| 인증 | PostgreSQL 기반 서버 세션과 계정 관리 API, React 미연결 | React 로그인·계정·관리 화면과 연결 |
+| 프론트엔드 | 역할이 분리된 React/shadcn UI, 인증·계정 API 연결 | 보호된 인터뷰 API까지 연결 |
+| 인증 | PostgreSQL 서버 세션과 계정 관리 API를 React에 연결 | 완료 |
 | 인터뷰 백엔드 | 인증 없는 FastAPI/LangGraph 프로토타입 | 역할·소유권이 적용된 동일 FastAPI 서비스 |
 | 영속성 | 인증은 PostgreSQL, 인터뷰는 프로세스 메모리와 gitignored JSON | 전체 PostgreSQL 16, AWS에서는 RDS for PostgreSQL |
 | 배포 | 로컬 PostgreSQL Compose와 호스트 애플리케이션 | 작은 EC2 애플리케이션 호스트 + private Single-AZ RDS |
 
-현재 목 UI와 FastAPI는 함께 실행할 수 있지만 UI는 fixture만 호출합니다. 새 `/api/auth/*`와 `/api/admin/participants*`에는 PostgreSQL 저장, 제한된 CORS, cookie 세션, CSRF와 역할 검사가 구현되어 있습니다. 반면 기존 인터뷰 endpoint에는 세션·역할·소유권 검사가 없고 PostgreSQL에 저장되지 않습니다. React 연결과 인터뷰 경계 전환이 모두 끝나기 전에는 실제 연구 데이터를 입력하지 않습니다.
+React는 기본적으로 라이브 HTTP adapter를 사용합니다. `/api/auth/*`와 `/api/admin/participants*`에는 PostgreSQL 저장, 제한된 CORS, cookie 세션, CSRF와 역할 검사가 구현되어 있으며 로그인·비밀번호 변경·참여자 관리 화면에 연결되어 있습니다. 반면 기존 인터뷰 endpoint에는 세션·역할·소유권 검사가 없고 PostgreSQL에 저장되지 않습니다. 라이브 adapter는 이 경로를 호출하지 않고 연결 전 상태를 표시합니다. 인터뷰 경계 전환이 끝나기 전에는 실제 연구 데이터를 입력하지 않습니다.
 
 ## 결정된 범위
 
@@ -219,12 +219,13 @@ CSV export는 참여자 코드를 사용하고 audit event를 남깁니다. spre
 
 역할 전환 UI는 두지 않습니다. 참여자 shell은 인터뷰와 계정 동작만, 관리자 shell은 참여자 관리와 인터뷰 검토만 제공합니다. UI 원칙과 세 가지 기본 색상은 [PRODUCT.md](../PRODUCT.md)를 따릅니다.
 
-현재 목 데이터는 `frontend/src/mocks/` 안에만 존재합니다. 실제 API 연결 시 `AppApi` 계약 뒤의 구현을 교체하고 별도의 browser persistence를 추가하지 않습니다.
+`HttpAppApi`가 기본 runtime이며 cookie 요청에는 `credentials: include`를 사용합니다. 상태 변경 요청은 CSRF cookie를 `X-CSRF-Token` header로 전달합니다. `401`은 client identity를 지우고 로그인으로 이동하며 `403`은 현재 identity를 유지합니다. 비밀번호 변경이 성공하면 모든 서버 세션과 client identity를 폐기하고 로그인 화면으로 돌아갑니다.
 
-현재 목과 목표의 차이는 다음 API 연결 단계에서 제거합니다.
+목 데이터는 `frontend/src/mocks/` 안에만 존재하며 `VITE_APP_MODE=mock`을 명시한 격리된 UI 개발과 테스트에만 사용합니다. 별도의 browser session persistence를 추가하지 않습니다. 보호된 인터뷰 API가 구현될 때까지 라이브 interview method는 네트워크 요청 전에 `501` 상태를 반환하며 이전 공개 endpoint를 우회 호출하지 않습니다.
 
-- 목 비밀번호 변경은 화면 흐름 검증을 위해 로그인 상태를 유지하지만 실제 API는 모든 세션을 폐기합니다.
-- 모든 보호 작업의 `403`을 공통 권한 상태로 표시합니다.
+인터뷰 API 연결 때 남은 계약 차이를 함께 제거합니다.
+
+- 모든 보호 작업의 `403`을 권한 전용 상태로 표시합니다.
 - AI 상태가 null인 행의 검토와 review-status 계산을 목표 계약에 맞춥니다.
 
 ## 개인정보와 운영
@@ -239,8 +240,8 @@ CSV export는 참여자 코드를 사용하고 audit event를 남깁니다. spre
 
 1. **완료:** PostgreSQL 설정, 로컬 Compose, 인증 모델·repository와 Alembic migration.
 2. **완료:** 비밀번호·rolling 세션 service, 2단계 로그인 잠금, 관리자 잠금 해제, 최초 관리자 명령, login/logout, CSRF와 역할 dependency.
-3. 인터뷰, 메시지, 점수표, 검토와 export를 PostgreSQL repository로 옮깁니다.
-4. React `AppApi`를 인증된 endpoint에 연결하고 위의 목 차이를 제거합니다.
+3. **완료:** React `AppApi`를 인증·계정 endpoint에 연결하고 mock을 명시적 개발·테스트 모드로 제한합니다.
+4. 인터뷰, 메시지, 점수표, 검토와 export를 PostgreSQL repository와 보호된 API로 옮겨 React에 연결합니다.
 5. 기존 `_sessions`, `MemorySaver` checkpoint 의존, JSON storage와 transcript logging을 활성 경로에서 제거합니다.
 6. 로컬 복구·동시성 검증 뒤 EC2/RDS 배포 설정을 추가합니다.
 
@@ -250,6 +251,7 @@ CSV export는 참여자 코드를 사용하고 audit event를 남깁니다. spre
 - **인증 범위 완료:** 24시간 일반 세션, 30일 rolling·90일 상한 자동 로그인, 갱신 임계점과 만료 테스트가 통과합니다.
 - **인증 범위 완료:** 첫 5회 실패의 임시 잠금, 다음 5회의 관리자 잠금, 성공 초기화, 관리자 해제와 세션 폐기 테스트가 통과합니다.
 - **인증 범위 완료:** 로그인·로그아웃·CSRF, generic 로그인 오류와 참여자 관리 역할 검사가 통과합니다.
+- **인증 범위 완료:** React 로그인·세션 복원·비밀번호 변경과 참여자 관리가 라이브 인증 API를 사용하며 공개 인터뷰 endpoint를 호출하지 않습니다.
 - **남음:** 참여자와 관리자가 상대 역할의 인터뷰 route와 데이터에 접근할 수 없습니다.
 - 중복 turn, LLM 실패, database 실패와 FastAPI 재시작 뒤 마지막 커밋 상태가 유지됩니다.
 - 활성 endpoint가 `_sessions`, `MemorySaver` 또는 JSON 결과 파일을 읽거나 쓰지 않습니다.

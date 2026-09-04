@@ -6,12 +6,12 @@ Dabom은 폐쇄형 연구 참여자를 대상으로 구조화된 인터뷰를 �
 
 | 영역 | 상태 |
 | --- | --- |
-| 프론트엔드 | React/Vite + shadcn/ui 참여자·관리자 목 UI |
-| 계정·인증 | FastAPI + PostgreSQL 서버 세션 구현, 프론트엔드는 아직 미연결 |
-| 인터뷰 백엔드 | FastAPI + LangGraph 무인증 프로토타입 |
+| 프론트엔드 | React/Vite + shadcn/ui, 로그인·계정 관리 API 연결 |
+| 계정·인증 | FastAPI + PostgreSQL 서버 세션, React 연결 완료 |
+| 인터뷰 백엔드 | FastAPI + LangGraph 무인증 프로토타입, 라이브 UI 연결 차단 |
 | 영속성 | 계정·세션·audit는 PostgreSQL, 인터뷰는 프로세스 메모리와 gitignored JSON |
 
-인증 API에는 2단계 로그인 잠금, 24시간 일반 세션, 30일 rolling·90일 상한 자동 로그인, CSRF·origin 검사, 참여자 계정 관리가 구현되어 있습니다. 화면의 로그인과 관리 기능은 여전히 `frontend/src/mocks/` fixture를 사용합니다.
+React는 기본적으로 실제 `/api/auth/*`와 `/api/admin/participants*`를 사용합니다. 2단계 로그인 잠금, 24시간 일반 세션, 30일 rolling·90일 상한 자동 로그인, CSRF·origin 검사와 참여자 계정 관리가 PostgreSQL에 연결되어 있습니다. 이전 인터뷰 endpoint는 아직 보호되지 않았으므로 라이브 UI에서 호출하지 않습니다.
 
 ## 로컬 준비
 
@@ -47,7 +47,7 @@ uv run python backend/manage.py bootstrap-admin --username <관리자_사용자�
 
 기본 포트는 FastAPI `8001`, Vite `5173`입니다. 사용 중인 포트가 있으면 다음 빈 포트를 자동 선택하므로 터미널에 출력된 주소를 사용하세요. 이 스크립트는 PostgreSQL을 시작하거나 migration을 자동 적용하지 않습니다.
 
-프론트엔드 목 UI만 실행할 수도 있습니다.
+프론트엔드 개발 서버만 실행할 수도 있습니다. 기본값은 라이브 API이며 FastAPI가 함께 실행 중이어야 합니다.
 
 ```bash
 (cd frontend && npm run dev)
@@ -70,6 +70,8 @@ uv run python -m uvicorn api:app --app-dir backend --reload --host 127.0.0.1 --p
 - `AUTH_ALLOWED_ORIGINS`: 쉼표로 구분한 브라우저 애플리케이션 origin
 - `AUTH_SESSION_COOKIE`, `AUTH_CSRF_COOKIE`: 인증 cookie 이름
 - `AUTH_COOKIE_SECURE`: HTTPS 배포에서는 반드시 `true`
+- `VITE_APP_MODE`: 기본값 `live`; 격리된 UI 개발·테스트에서만 `mock` 사용
+- `VITE_AUTH_CSRF_COOKIE`: `AUTH_CSRF_COOKIE`와 같은 값이어야 하는 프론트엔드 build 설정
 - `OPENAI_API_KEY`: 인터뷰 모델 인증
 - `INTERVIEW_MODEL`: 기본값 `openai:gpt-4.1-mini`
 - `INTERVIEW_BASE_URL`, `INTERVIEW_API_KEY`: 선택한 OpenAI 호환 제공자
@@ -123,13 +125,13 @@ bash tests/test_vite_proxy.sh
 - `backend/migrations/`: Alembic migration
 - `backend/api.py`: 새 인증 router와 기존 인터뷰 REST/SSE 프로토타입
 - `backend/interview/`: LangGraph 인터뷰 엔진, 점수표, 도구, 프롬프트
-- `frontend/src/app/`: API 계약, 세션 상태, 역할 guard와 routing
-- `frontend/src/mocks/`: 현재 UI fixture와 목 `AppApi`
+- `frontend/src/app/`: 라이브 HTTP adapter, API 계약, 세션 상태, 역할 guard와 routing
+- `frontend/src/mocks/`: 명시적 mock 모드와 테스트 전용 fixture
 - `frontend/src/layouts/`, `pages/`, `features/`: 역할별 화면과 기능
 - `interview_flow.json`: 질문 metadata
 
 ## 연구 데이터 주의
 
-인증 API가 추가됐지만 기존 `/api/start`, `/api/message`, `/api/stream`, `/api/review`, `/api/sessions`, `/api/csv` 경로에는 아직 서버 권한·소유권 검사와 PostgreSQL 연구 데이터 저장이 없습니다. React도 인증 API에 연결되지 않았습니다. 이 두 단계가 완료되기 전에는 실제 연구 데이터를 입력하지 마세요.
+기존 `/api/start`, `/api/message`, `/api/stream`, `/api/review`, `/api/sessions`, `/api/csv` 경로에는 아직 서버 권한·소유권 검사와 PostgreSQL 연구 데이터 저장이 없습니다. 라이브 React adapter는 이 경로를 호출하지 않고 인터뷰 화면에 연결 전 상태를 표시합니다. 보호된 인터뷰 API와 PostgreSQL 저장이 완료되기 전에는 실제 연구 데이터를 입력하지 마세요.
 
 목표 구조와 남은 전환 기준은 [docs/architecture.md](docs/architecture.md), 제품·UI 원칙은 [PRODUCT.md](PRODUCT.md), 개발 규칙은 [AGENTS.md](AGENTS.md)를 참조하세요.
