@@ -23,6 +23,7 @@ EOF
 cat >"$STUB_BIN/uv" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >"$CAPTURE_DIR/uv_args"
+printf '%s\n' "${AUTH_ALLOWED_ORIGINS:-}" >"$CAPTURE_DIR/auth_allowed_origins"
 EOF
 
 cat >"$STUB_BIN/npm" <<'EOF'
@@ -62,6 +63,7 @@ assert_equals() {
 assert_contains "$output" "Frontend: http://127.0.0.1:5174/"
 assert_contains "$output" "API:      http://127.0.0.1:8002/api/health"
 assert_equals "$(<"$CAPTURE_DIR/npm_api_port")" "8002" "Vite API port"
+assert_equals "$(<"$CAPTURE_DIR/auth_allowed_origins")" "http://127.0.0.1:5174,http://localhost:5174" "Auth allowed origins"
 assert_contains "$(<"$CAPTURE_DIR/npm_args")" "--port 5174"
 assert_contains "$(<"$CAPTURE_DIR/npm_args")" "--strictPort"
 assert_contains "$(<"$CAPTURE_DIR/uv_args")" "run python -m uvicorn"

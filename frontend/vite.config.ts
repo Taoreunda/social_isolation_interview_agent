@@ -6,6 +6,7 @@ import path from 'node:path'
 const apiPort = process.env.VITE_API_PORT || '8001'
 
 export default defineConfig({
+  envDir: path.resolve(__dirname, '..'),
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

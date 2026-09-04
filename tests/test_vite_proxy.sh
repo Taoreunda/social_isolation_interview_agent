@@ -14,12 +14,14 @@ const loaded = await loadConfigFromFile(
 )
 
 console.log(loaded?.config.server?.proxy?.['/api'] ?? '')
+console.log(loaded?.config.envDir ?? '')
 NODE
 )"
 
-expected="http://127.0.0.1:8123"
+expected="http://127.0.0.1:8123
+$REPO_ROOT"
 if [[ "$actual" != "$expected" ]]; then
-  echo "Expected Vite proxy '$expected', got '$actual'" >&2
+  echo "Expected Vite proxy and env directory '$expected', got '$actual'" >&2
   exit 1
 fi
 

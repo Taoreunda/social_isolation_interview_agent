@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { useApi } from '@/app/api-context'
+import { hasApiStatus } from '@/app/api-error'
 import type { InterviewDetail, ReviewScorecardInput } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { ScorecardReview } from '@/features/admin/ScorecardReview'
@@ -32,7 +33,7 @@ export function InterviewReviewPage() {
   const api = useApi()
   const { interviewId = '' } = useParams()
   const [detail, setDetail] = useState<InterviewDetail | null>(null)
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error' | 'unavailable'>('loading')
   const [exportError, setExportError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const mounted = useRef(false)
@@ -71,8 +72,10 @@ export function InterviewReviewPage() {
       if (!isCurrentVisit(request) || loadRequest.current !== request) return
       setDetail(loaded)
       setPhase('ready')
-    } catch {
-      if (isCurrentVisit(request) && loadRequest.current === request) setPhase('error')
+    } catch (error) {
+      if (isCurrentVisit(request) && loadRequest.current === request) {
+        setPhase(hasApiStatus(error, 501) ? 'unavailable' : 'error')
+      }
     }
   }, [api, isCurrentVisit])
 
@@ -186,6 +189,11 @@ export function InterviewReviewPage() {
       <Button className="mt-3" onClick={() => void load(currentVisit.current)} type="button" variant="outline">
         <RefreshCw aria-hidden="true" />다시 시도
       </Button>
+    </main>
+  }
+  if (phase === 'unavailable') {
+    return <main className="mx-auto w-full max-w-6xl px-4 py-6">
+      <p role="status">인터뷰 기능은 아직 연결되지 않았습니다.</p>
     </main>
   }
   if (!detail) return null

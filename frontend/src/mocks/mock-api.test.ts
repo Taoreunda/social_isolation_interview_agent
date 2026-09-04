@@ -219,8 +219,8 @@ describe('MockAppApi', () => {
       rationale: '변경 인스턴스 검토',
     })
     await changed.login(participantLogin)
-    await changed.changePassword('research123!', 'changed-password!')
     await changed.sendMessage('interview-001', 'isolated-turn', '변경 인스턴스 응답')
+    await changed.changePassword('research123!', 'changed-password!')
 
     await untouched.login(adminLogin)
     expect(await untouched.listParticipants()).toHaveLength(1)

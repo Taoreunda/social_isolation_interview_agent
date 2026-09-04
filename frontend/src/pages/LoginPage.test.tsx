@@ -238,6 +238,27 @@ describe('LoginPage', () => {
     expect(api.loginMock).not.toHaveBeenCalled()
   })
 
+  it('confirms a completed password change on the returned login screen', async () => {
+    const api = new AccountScreenApi()
+    render(
+      <ApiProvider api={api}>
+        <SessionProvider>
+          <MemoryRouter initialEntries={[{
+            pathname: '/login',
+            state: { announcement: '비밀번호를 변경했습니다. 다시 로그인하세요.' },
+          }]}>
+            <LoginPage />
+          </MemoryRouter>
+        </SessionProvider>
+      </ApiProvider>,
+    )
+
+    await screen.findByRole('heading', { name: '로그인' })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '비밀번호를 변경했습니다. 다시 로그인하세요.',
+    )
+  })
+
   it('routes a participant to the interview returned by login', async () => {
     const api = new AccountScreenApi()
     api.loginMock.mockResolvedValue(participant)
@@ -438,7 +459,7 @@ describe('LoginPage', () => {
 })
 
 describe('PasswordPage', () => {
-  it('changes a password without a first-login prompt', async () => {
+  it('returns to login after changing a password without a first-login prompt', async () => {
     const api = new AccountScreenApi()
     api.currentUser = participant
     api.changePasswordMock.mockResolvedValue()
@@ -453,7 +474,7 @@ describe('PasswordPage', () => {
     await waitFor(() => {
       expect(api.changePasswordMock).toHaveBeenCalledWith('current-password', 'changed-password')
     })
-    expect(await screen.findByTestId('location')).toHaveTextContent('/interview')
+    expect(await screen.findByTestId('location')).toHaveTextContent('/login')
   })
 
   it('validates password length and confirmation before it submits', async () => {
@@ -520,7 +541,7 @@ describe('PasswordPage', () => {
 
     expect(api.changePasswordMock).toHaveBeenCalledTimes(1)
     resolveChange()
-    expect(await screen.findByTestId('location')).toHaveTextContent('/interview')
+    expect(await screen.findByTestId('location')).toHaveTextContent('/login')
   })
 
   it('allows password-change retry after a failure', async () => {
@@ -538,7 +559,7 @@ describe('PasswordPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('변경에 실패했습니다')
     await user.click(screen.getByRole('button', { name: '변경' }))
 
-    expect(await screen.findByTestId('location')).toHaveTextContent('/interview')
+    expect(await screen.findByTestId('location')).toHaveTextContent('/login')
     expect(api.changePasswordMock).toHaveBeenCalledTimes(2)
   })
 

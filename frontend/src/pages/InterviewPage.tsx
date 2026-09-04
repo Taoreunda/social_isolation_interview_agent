@@ -7,7 +7,7 @@ import type { ParticipantInterview } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { Chat } from '@/features/interview/Chat'
 
-type InterviewPhase = 'loading' | 'active' | 'sending' | 'load_error' | 'send_error' | 'completed'
+type InterviewPhase = 'loading' | 'active' | 'sending' | 'load_error' | 'send_error' | 'completed' | 'unavailable'
 
 interface PendingTurn {
   clientTurnId: string
@@ -40,6 +40,10 @@ export function InterviewPage() {
       setPhase(phaseFor(detail))
     } catch (error) {
       if (!mounted.current || operation !== requestGeneration.current) return
+      if (hasApiStatus(error, 501)) {
+        setPhase('unavailable')
+        return
+      }
       if (hasApiStatus(error, 403)) setLoadError('이 인터뷰에 접근할 권한이 없습니다')
       setPhase('load_error')
     }
@@ -96,6 +100,14 @@ export function InterviewPage() {
           <RefreshCw aria-hidden="true" />
           다시 시도
         </Button>
+      </main>
+    )
+  }
+
+  if (phase === 'unavailable') {
+    return (
+      <main className="mx-auto w-full max-w-3xl px-4 py-6">
+        <p role="status">인터뷰 기능은 아직 연결되지 않았습니다.</p>
       </main>
     )
   }

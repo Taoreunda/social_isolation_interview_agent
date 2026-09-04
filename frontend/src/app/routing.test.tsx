@@ -318,7 +318,7 @@ describe('complete application route tree', () => {
     expect(screen.getByTestId('location-path')).toHaveTextContent('/account/password')
   })
 
-  it('keeps the mock participant authenticated and returns home after changing a password', async () => {
+  it('clears the participant session and returns to login after changing a password', async () => {
     const api = new MockAppApi()
     await api.login({ username: 'participant01', password: 'research123!', remember: false })
     renderCompleteRoutes(api, '/account/password')
@@ -330,10 +330,10 @@ describe('complete application route tree', () => {
     await user.type(screen.getByLabelText('새 비밀번호 확인'), 'changed-password!')
     await user.click(screen.getByRole('button', { name: '변경' }))
 
-    expect(await screen.findByRole('heading', { name: '인터뷰 시작' })).toBeInTheDocument()
-    expect(screen.getByText('participant01')).toBeInTheDocument()
-    expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
-    await expect(api.getCurrentUser()).resolves.toMatchObject({ username: 'participant01' })
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    expect(screen.getByText('비밀번호를 변경했습니다. 다시 로그인하세요.')).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/login')
+    await expect(api.getCurrentUser()).resolves.toBeNull()
   })
 
   it('renders an admin interview detail route directly', async () => {

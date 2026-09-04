@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useApi } from '@/app/api-context'
+import { hasApiStatus } from '@/app/api-error'
 import type { InterviewListItem } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -26,7 +27,7 @@ function ReviewState({ status }: { status: InterviewListItem['reviewStatus'] }) 
 export function AdminDashboardPage() {
   const api = useApi()
   const [items, setItems] = useState<InterviewListItem[]>([])
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error' | 'unavailable'>('loading')
   const mounted = useRef(false)
   const token = useRef(0)
 
@@ -39,8 +40,10 @@ export function AdminDashboardPage() {
         setItems(result)
         setPhase('ready')
       }
-    } catch {
-      if (mounted.current && id === token.current) setPhase('error')
+    } catch (error) {
+      if (mounted.current && id === token.current) {
+        setPhase(hasApiStatus(error, 501) ? 'unavailable' : 'error')
+      }
     }
   }, [api])
 
@@ -75,6 +78,14 @@ export function AdminDashboardPage() {
           <RefreshCw aria-hidden="true" />
           다시 시도
         </Button>
+      </main>
+    )
+  }
+
+  if (phase === 'unavailable') {
+    return (
+      <main className="mx-auto w-full max-w-6xl px-4 py-6">
+        <p role="status">인터뷰 기능은 아직 연결되지 않았습니다.</p>
       </main>
     )
   }

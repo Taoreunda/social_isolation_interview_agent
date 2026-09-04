@@ -44,6 +44,10 @@ find_available_port() {
 
 API_PORT="$(find_available_port "$REQUESTED_API_PORT")"
 WEB_PORT="$(find_available_port "$REQUESTED_WEB_PORT" "$API_PORT")"
+LOCAL_AUTH_ALLOWED_ORIGINS="http://127.0.0.1:$WEB_PORT,http://localhost:$WEB_PORT"
+if [ -n "${AUTH_ALLOWED_ORIGINS:-}" ]; then
+  LOCAL_AUTH_ALLOWED_ORIGINS="$LOCAL_AUTH_ALLOWED_ORIGINS,$AUTH_ALLOWED_ORIGINS"
+fi
 
 if [ "$API_PORT" != "$REQUESTED_API_PORT" ]; then
   echo "Port $REQUESTED_API_PORT is in use; using API port $API_PORT."
@@ -53,7 +57,8 @@ if [ "$WEB_PORT" != "$REQUESTED_WEB_PORT" ]; then
 fi
 
 echo "Starting FastAPI backend on http://127.0.0.1:$API_PORT"
-uv run python -m uvicorn api:app --app-dir backend --reload --host 127.0.0.1 --port "$API_PORT" >"$API_LOG" 2>&1 &
+AUTH_ALLOWED_ORIGINS="$LOCAL_AUTH_ALLOWED_ORIGINS" \
+  uv run python -m uvicorn api:app --app-dir backend --reload --host 127.0.0.1 --port "$API_PORT" >"$API_LOG" 2>&1 &
 API_PID=$!
 
 if [ ! -d "$ROOT_DIR/frontend/node_modules" ]; then

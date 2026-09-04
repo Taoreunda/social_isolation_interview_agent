@@ -1,4 +1,4 @@
-import { AlertCircle, Ban, CircleCheck, CircleOff, Clock3, KeyRound, Search, UserPlus } from 'lucide-react'
+import { AlertCircle, Ban, CircleCheck, CircleOff, Clock3, KeyRound, LockKeyhole, LockOpen, Search, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '@/app/api-context'
@@ -43,9 +43,13 @@ function InterviewStatus({ status }: { status: ParticipantRecord['interviewStatu
 }
 
 function AccountStatus({ status }: { status: ParticipantRecord['status'] }) {
-  const active = status === 'active'
-  const Icon = active ? CircleCheck : CircleOff
-  return <span className="inline-flex items-center gap-1"><Icon aria-hidden="true" className="size-4" />{active ? '활성' : '비활성'}</span>
+  const labels = {
+    active: '활성',
+    admin_locked: '관리자 잠금',
+    disabled: '비활성',
+  } as const
+  const Icon = status === 'active' ? CircleCheck : status === 'admin_locked' ? LockKeyhole : CircleOff
+  return <span className="inline-flex items-center gap-1"><Icon aria-hidden="true" className="size-4" />{labels[status]}</span>
 }
 
 export function ParticipantsPage() {
@@ -57,11 +61,14 @@ export function ParticipantsPage() {
   const [participantToDisable, setParticipantToDisable] = useState<ParticipantRecord | null>(null)
   const [disableError, setDisableError] = useState<string | null>(null)
   const [isDisabling, setIsDisabling] = useState(false)
+  const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [unlockingIds, setUnlockingIds] = useState<Set<string>>(() => new Set())
   const mounted = useRef(false)
   const operation = useRef(0)
   const disableInFlight = useRef(false)
   const disableRequest = useRef(0)
   const activeDisableRequest = useRef<number | null>(null)
+  const unlockRequests = useRef(new Map<string, symbol>())
 
   useEffect(() => {
     mounted.current = true
@@ -137,6 +144,34 @@ export function ParticipantsPage() {
     setDisableError(null)
   }
 
+  async function unlockParticipant(participant: ParticipantRecord): Promise<void> {
+    if (unlockRequests.current.has(participant.id)) return
+    const request = Symbol('participant-unlock')
+    unlockRequests.current.set(participant.id, request)
+    setUnlockError(null)
+    setUnlockingIds((current) => new Set(current).add(participant.id))
+    try {
+      const updated = await api.unlockParticipant(participant.id)
+      if (!mounted.current || unlockRequests.current.get(participant.id) !== request) return
+      updateParticipant(updated)
+    } catch {
+      if (mounted.current && unlockRequests.current.get(participant.id) === request) {
+        setUnlockError('참여자 잠금을 해제하지 못했습니다')
+      }
+    } finally {
+      if (unlockRequests.current.get(participant.id) === request) {
+        unlockRequests.current.delete(participant.id)
+        if (mounted.current) {
+          setUnlockingIds((current) => {
+            const next = new Set(current)
+            next.delete(participant.id)
+            return next
+          })
+        }
+      }
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -159,6 +194,7 @@ export function ParticipantsPage() {
       </div>
 
       {phase === 'loading' && <p className="mt-6" role="status">참여자를 불러오는 중</p>}
+      {unlockError && <p className="mt-6 inline-flex items-center gap-2" role="alert"><AlertCircle aria-hidden="true" className="size-4" />{unlockError}</p>}
       {phase === 'error' && (
         <div className="mt-6">
           <p className="inline-flex items-center gap-2" role="alert"><AlertCircle aria-hidden="true" className="size-4" />참여자를 불러오지 못했습니다</p>
@@ -193,6 +229,20 @@ export function ParticipantsPage() {
                       <Button className="h-auto min-h-8 whitespace-normal" onClick={() => setParticipantToDisable(participant)} size="sm" type="button" variant="outline">
                         <Ban aria-hidden="true" />
                         비활성화
+                      </Button>
+                    )}
+                    {participant.status === 'admin_locked' && (
+                      <Button
+                        aria-busy={unlockingIds.has(participant.id)}
+                        className="h-auto min-h-8 whitespace-normal"
+                        disabled={unlockingIds.has(participant.id)}
+                        onClick={() => void unlockParticipant(participant)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <LockOpen aria-hidden="true" />
+                        잠금 해제
                       </Button>
                     )}
                   </div>

@@ -58,6 +58,7 @@ export class MockAppApi implements AppApi {
     const account = this.requireCurrentAccount()
     if (!await this.matchesPassword(account, currentPassword)) throw new ApiError(400, 'Invalid current password')
     account.passwordVerifier = await this.passwordVerifier(newPassword)
+    await this.logout()
   }
 
   async getCurrentInterview(): Promise<ParticipantInterview> {

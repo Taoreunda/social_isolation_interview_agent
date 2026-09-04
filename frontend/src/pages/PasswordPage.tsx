@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { useApi } from '@/app/api-context'
 import type { Role } from '@/app/contracts'
 import { useSession } from '@/app/session-context'
 import { Button } from '@/components/ui/button'
@@ -13,8 +12,7 @@ function homeFor(role: Role | undefined): string {
 }
 
 export function PasswordPage() {
-  const api = useApi()
-  const { user } = useSession()
+  const { changePassword, user } = useSession()
   const navigate = useNavigate()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -55,11 +53,11 @@ export function PasswordPage() {
     setError(null)
     setIsSubmitting(true)
     try {
-      await api.changePassword(currentPassword, newPassword)
+      await changePassword(currentPassword, newPassword)
       if (!mounted.current || operation !== generation.current) return
-      navigate(homeFor(user?.role), {
+      navigate('/login', {
         replace: true,
-        state: { announcement: '변경했습니다' },
+        state: { announcement: '비밀번호를 변경했습니다. 다시 로그인하세요.' },
       })
     } catch {
       if (!mounted.current || operation !== generation.current) return

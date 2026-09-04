@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
+import { ApiError } from '@/app/api-error'
 import type { AppApi, ParticipantInterview } from '@/app/contracts'
 import { mockCredentials } from '@/mocks/fixtures'
 import { MockAppApi } from '@/mocks/mock-api'
@@ -247,6 +248,19 @@ describe('InterviewPage', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '다시 시도' }))
     expect(await screen.findByRole('heading', { name: '인터뷰 시작' })).toBeInTheDocument()
+  })
+
+  it('shows a stable state when the live interview API is not connected', async () => {
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockRejectedValue(
+        new ApiError(501, '인터뷰 기능은 아직 연결되지 않았습니다.'),
+      ),
+    })
+
+    renderInterview(api)
+
+    expect(await screen.findByText('인터뷰 기능은 아직 연결되지 않았습니다.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
   })
 
   it('ignores a load result after unmount', async () => {

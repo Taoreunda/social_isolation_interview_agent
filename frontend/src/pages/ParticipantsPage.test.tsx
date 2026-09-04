@@ -85,6 +85,7 @@ class DeferredParticipantApi extends MockAppApi {
   readonly disableRequests: Deferred<ParticipantRecord>[] = []
   readonly listRequests: Deferred<ParticipantRecord[]>[] = []
   readonly resetRequests: Deferred<PasswordResult>[] = []
+  readonly unlockRequests: Deferred<ParticipantRecord>[] = []
 
   override createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord> {
     this.createInputs.push(input)
@@ -108,6 +109,12 @@ class DeferredParticipantApi extends MockAppApi {
   override resetParticipantPassword(): Promise<PasswordResult> {
     const request = deferred<PasswordResult>()
     this.resetRequests.push(request)
+    return request.promise
+  }
+
+  override unlockParticipant(): Promise<ParticipantRecord> {
+    const request = deferred<ParticipantRecord>()
+    this.unlockRequests.push(request)
     return request.promise
   }
 }
@@ -327,6 +334,27 @@ describe('ParticipantsPage', () => {
     await act(async () => api.disableRequests[0].resolve(participant({ id: 'participant-001', participantCode: 'P-001', username: 'participant01', status: 'disabled' })))
     expect(await screen.findByText('비활성')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '비활성화' })).not.toBeInTheDocument()
+  })
+
+  it('unlocks an administrator-locked participant and renders the committed state', async () => {
+    const api = new DeferredParticipantApi()
+    renderWithApi(api)
+    const user = userEvent.setup()
+    await screen.findByRole('heading', { name: '참여자' })
+    await act(async () => api.listRequests[0].resolve([
+      participant({ status: 'admin_locked' }),
+    ]))
+
+    expect(screen.getByText('관리자 잠금')).toBeInTheDocument()
+    const unlock = screen.getByRole('button', { name: '잠금 해제' })
+    await user.click(unlock)
+
+    expect(api.unlockRequests).toHaveLength(1)
+    expect(unlock).toBeDisabled()
+    await act(async () => api.unlockRequests[0].resolve(participant({ status: 'active' })))
+
+    expect(await screen.findByText('활성')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '잠금 해제' })).not.toBeInTheDocument()
   })
 
   it('retries a failed disable without mutating the active row', async () => {

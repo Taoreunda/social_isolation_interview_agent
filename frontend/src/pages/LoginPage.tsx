@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -13,8 +13,14 @@ function homeFor(role: Role): string {
 }
 
 export function LoginPage() {
-  const { login } = useSession()
+  const { announcement: sessionAnnouncement, login } = useSession()
+  const location = useLocation()
   const navigate = useNavigate()
+  const locationAnnouncement =
+    typeof (location.state as { announcement?: unknown } | null)?.announcement === 'string'
+      ? (location.state as { announcement: string }).announcement
+      : null
+  const announcement = locationAnnouncement ?? sessionAnnouncement
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
@@ -69,6 +75,7 @@ export function LoginPage() {
       <form className="w-full space-y-5" onSubmit={(event) => void handleSubmit(event)}>
         <p className="font-semibold text-foreground">Dabom</p>
         <h1 className="text-2xl font-semibold">로그인</h1>
+        {announcement && <p role="status">{announcement}</p>}
         <div className="space-y-2">
           <Label htmlFor="username">사용자 이름</Label>
           <Input

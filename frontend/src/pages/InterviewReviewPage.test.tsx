@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
+import { ApiError } from '@/app/api-error'
 import type { AppApi, InterviewDetail, InterviewListItem } from '@/app/contracts'
 import { AdminDashboardPage } from './AdminDashboardPage'
 import { InterviewReviewPage } from './InterviewReviewPage'
@@ -353,6 +354,22 @@ describe('administrator interview review', () => {
 
     expect(await screen.findByText('인터뷰가 없습니다')).toBeInTheDocument()
     expect(api.listInterviews).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows a stable state when live interview review APIs are not connected', async () => {
+    const unavailable = new ApiError(501, '인터뷰 기능은 아직 연결되지 않았습니다.')
+    const dashboard = renderDashboard(createApi({
+      listInterviews: vi.fn().mockRejectedValue(unavailable),
+    }))
+
+    expect(await screen.findByText('인터뷰 기능은 아직 연결되지 않았습니다.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
+    dashboard.unmount()
+
+    renderReview(createApi({ getInterview: vi.fn().mockRejectedValue(unavailable) }))
+
+    expect(await screen.findByText('인터뷰 기능은 아직 연결되지 않았습니다.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
   })
 
   it('ignores stale dashboard loads and safely settles an unmounted load', async () => {

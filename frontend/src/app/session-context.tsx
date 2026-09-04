@@ -21,8 +21,10 @@ interface SessionContextValue {
   user: CurrentUser | null
   status: SessionStatus
   isLoggingOut: boolean
+  announcement: string | null
   login: (input: LoginInput, signal?: AbortSignal) => Promise<CurrentUser>
   logout: () => Promise<void>
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   refresh: () => Promise<CurrentUser | null>
 }
 
@@ -87,6 +89,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [status, setStatus] = useState<SessionStatus>('loading')
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [announcement, setAnnouncement] = useState<string | null>(null)
   const mounted = useRef(false)
   const generation = useRef(0)
   const logoutRequest = useRef<Promise<void> | null>(null)
@@ -148,6 +151,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (canceled) {
         return currentUser
       }
+      setAnnouncement(null)
       synchronize(operation, currentUser)
       return currentUser
     } finally {
@@ -159,6 +163,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (logoutRequest.current) return logoutRequest.current
 
     const operation = nextOperation()
+    setAnnouncement(null)
     setIsLoggingOut(true)
     let response: Promise<void>
     try {
@@ -185,6 +190,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return request
   }, [api, nextOperation, synchronize])
 
+  const changePassword = useCallback(async (
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> => {
+    const operation = nextOperation()
+    try {
+      await api.changePassword(currentPassword, newPassword)
+    } catch (error) {
+      if (hasApiStatus(error, 401)) synchronize(operation, null)
+      throw error
+    }
+    setAnnouncement('비밀번호를 변경했습니다. 다시 로그인하세요.')
+    synchronize(operation, null)
+  }, [api, nextOperation, synchronize])
+
   const authorizedRequest = useCallback<AuthorizedRequest>(async (request) => {
     const operation = generation.current
     try {
@@ -207,10 +227,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     user,
     status,
     isLoggingOut,
+    announcement,
+    changePassword,
     login,
     logout,
     refresh,
-  }), [isLoggingOut, login, logout, refresh, status, user])
+  }), [announcement, changePassword, isLoggingOut, login, logout, refresh, status, user])
 
   if (status === 'loading') return <LoadingSession />
   if (status === 'restore_error') {
