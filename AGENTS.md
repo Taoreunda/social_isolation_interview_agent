@@ -43,6 +43,8 @@ Diagnosis changes update both `Scorecard.calculate()` and `calculate_with_overri
 
 The PostgreSQL slice must use Alembic migrations and repositories without SQLite or JSON fallback. Real password changes, administrator resets, and account disable operations revoke all sessions for that account. The current mock intentionally keeps the user signed in after a password change for UI flow validation.
 
+Implement authentication from the state machine in `docs/architecture.md`: a fixed 24-hour normal session; a 30-day rolling remembered session renewed only near expiry and capped at 90 days; five failures for a 15-minute temporary lock; then five more failures for an administrator-released lock. Attempts during temporary lock do not advance the second stage. Successful login resets the failure stage. Administrator lock and unlock revoke sessions and emit audit events.
+
 ## Commands and Tests
 
 Install from the repository root:
@@ -75,6 +77,8 @@ Current LangGraph checkpoints use process-local `MemorySaver`. `data/web_session
 
 Runtime data, `logs/interview_*.json`, and LangSmith traces may contain sensitive content. Never commit or attach them unsanitized. Secrets belong in the root `.env`.
 
-Keep `README.md` for setup and current behavior, this file for contributor rules, `PRODUCT.md` for durable product/UI constraints, and `docs/architecture.md` for the target system. Update these documents with the code that changes their claims. Do not add PRDs, blueprints, completed implementation plans, dated design drafts, session transcripts, or agent scratch reports when one of the four maintained documents can hold the decision.
+Keep `README.md` for setup and current behavior, this file for contributor rules, `PRODUCT.md` for durable product/UI constraints, and `docs/architecture.md` for the target system. Update these documents with the code that changes their claims.
+
+Temporary PRDs, blueprints, design notes, implementation plans, checklists, and review reports are allowed while work is active. Give them a clear scope and status. At completion, move durable decisions into the maintained documents above, then delete completed plans and scratch material. Do not retain dated drafts, session transcripts, or agent reports as a second source of truth.
 
 Use present-tense, area-prefixed commit subjects. PRs summarize user-visible effects, exact verification commands, configuration changes, and migrations.

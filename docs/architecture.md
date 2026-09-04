@@ -55,7 +55,7 @@ AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. �
 
 ### 관리자
 
-- 참여자 계정 생성·비활성화·비밀번호 재설정
+- 참여자 계정 생성·비활성화·비밀번호 재설정·관리자 잠금 해제
 - 인터뷰 목록·상세 조회, 점수표 동의·변경, CSV export
 - 실명 대신 가명 `participant_code` 사용
 
@@ -71,15 +71,28 @@ AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. �
 - 평문 비밀번호는 해당 응답에서 한 번만 반환하고 저장하거나 로그로 남기지 않습니다.
 - 첫 관리자는 로컬 shell 또는 AWS Systems Manager에서 실행하는 대화형 관리 명령으로 생성합니다.
 - 로그인 실패 메시지는 사용자 이름의 존재 여부를 구분하지 않습니다.
-- 15분 안에 다섯 번 실패하면 계정을 15분 잠그고, 성공한 로그인은 실패 window를 초기화합니다.
+
+로그인 실패는 두 단계로 처리합니다.
+
+1. 15분 안에 다섯 번 실패하면 15분 동안 임시 잠급니다.
+2. 임시 잠금 중 발생한 요청은 다음 단계의 실패 횟수에 포함하지 않습니다.
+3. 임시 잠금이 끝난 뒤 다시 15분 안에 다섯 번 실패하면 `admin_locked` 상태로 전환합니다.
+4. `admin_locked` 계정은 관리자만 해제할 수 있습니다. 해제는 실패 횟수와 잠금 단계를 초기화하고 기존 세션을 복구하지 않습니다.
+5. 임시 잠금 이후 정상 로그인에 성공하면 실패 횟수와 잠금 단계를 초기화합니다.
+6. 관리자 잠금과 해제는 모든 기존 세션을 폐기하고 audit event를 기록합니다.
 
 로그인 성공 시 암호학적으로 안전한 opaque token을 생성합니다. 브라우저에는 `HttpOnly`, `SameSite=Lax` cookie만 전달하고 production에서는 `Secure`를 추가합니다. PostgreSQL에는 token hash만 저장합니다.
 
-- 기본 세션의 절대 수명: 12시간
-- 자동 로그인 세션의 절대 수명: 30일
+- 일반 세션: 생성 시점부터 24시간의 고정 만료. 활동으로 연장하지 않음
+- 자동 로그인 세션: 마지막 유효 활동을 기준으로 30일의 rolling 만료
+- 자동 로그인 갱신: 만료까지 7일 이하로 남았을 때 인증된 요청이 성공하면 만료를 현재 시점부터 30일로 연장
+- 자동 로그인 절대 상한: 최초 인증 시점부터 90일. 상한에 도달하면 다시 로그인해야 함
+- 새로 로그인하면 기존 세션을 연장하지 않고 새로운 만료 기준의 세션을 생성
 - 로그아웃: 현재 세션 폐기
-- 비밀번호 변경·관리자 재설정·계정 비활성화: 해당 계정의 모든 세션 폐기
+- 비밀번호 변경·관리자 재설정·계정 비활성화·관리자 잠금: 해당 계정의 모든 세션 폐기
 - 만료·폐기 세션: 주기적인 정리 명령으로 삭제
+
+`last_seen_at` 갱신은 요청마다 쓰지 않고 일정 간격으로 제한합니다. rolling 연장 여부는 서버가 계산하며 client cookie만으로 만료를 늘릴 수 없습니다.
 
 상태 변경 요청은 허용된 origin과 CSRF token을 검증합니다. CORS는 개발·production 각각의 애플리케이션 origin으로 제한합니다.
 
@@ -89,14 +102,15 @@ AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. �
 
 ### `user_accounts`
 
-- 정규화·표시 사용자 이름, password hash, 역할, 활성 상태
+- 정규화·표시 사용자 이름, password hash, `participant|admin` 역할, `active|disabled|admin_locked` 상태
 - 참여자에게만 존재하는 unique `participant_code`
-- 로그인 실패 횟수와 `locked_until`
+- 실패 window 시작 시각과 횟수, `temporary_locked_until`, 잠금 단계
+- `admin_locked_at`, 잠금·해제 관리자와 해제 시각
 - 생성자와 생성·수정·비밀번호 변경 시각
 
 ### `auth_sessions`
 
-- 사용자, token hash, 생성·최근 사용·만료·폐기 시각
+- 사용자, token hash, session 종류, 생성·최근 사용·rolling 만료·절대 만료·폐기 시각
 
 ### `interviews`
 
@@ -126,7 +140,7 @@ AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. �
 ### `audit_events`
 
 - actor, action, target 종류·ID, 시각과 최소 metadata
-- 계정 생성·비활성화·재설정, 인터뷰 archive, 전문가 변경과 export 기록
+- 계정 생성·비활성화·재설정·잠금·해제, 인터뷰 archive, 전문가 변경과 export 기록
 - 대화 내용, 비밀번호, token, 진단은 중복 기록하지 않음
 
 여러 연구를 실제로 운영하기 전에는 `studies` 테이블을 추가하지 않습니다.
@@ -151,7 +165,7 @@ LLM 실패 시 이전 커밋 상태를 유지합니다. commit 실패 시 UI는 
 공개 endpoint는 health/readiness와 login으로 제한합니다. 나머지는 유효한 서버 세션이 필요합니다.
 
 - 참여자 API: 현재 계정, 비밀번호 변경, 현재 인터뷰, 메시지 stream과 최종 커밋 상태
-- 관리자 API: 참여자 계정, 인터뷰 목록·상세·archive, 점수표 검토, CSV export
+- 관리자 API: 참여자 계정·잠금 해제, 인터뷰 목록·상세·archive, 점수표 검토, CSV export
 
 참여자용 인터뷰 응답에는 진행 상태와 공개 메시지만 포함합니다. `participant_code`, 검토 상태, 점수표, AI 상태와 근거는 관리자 DTO에만 포함합니다.
 
@@ -205,7 +219,7 @@ CSV export는 참여자 코드를 사용하고 audit event를 남깁니다. spre
 ## 다음 구현 순서
 
 1. PostgreSQL 설정, 로컬 Compose, SQLAlchemy 모델·repository와 Alembic migration을 추가합니다.
-2. 비밀번호·세션 service, 최초 관리자 명령, login/logout, CSRF와 역할 dependency를 구현합니다.
+2. 비밀번호·rolling 세션 service, 2단계 로그인 잠금, 관리자 잠금 해제, 최초 관리자 명령, login/logout, CSRF와 역할 dependency를 구현합니다.
 3. 인터뷰, 메시지, 점수표, 검토와 export를 repository로 옮깁니다.
 4. React `AppApi`를 인증된 endpoint에 연결하고 위의 목 차이를 제거합니다.
 5. 기존 `_sessions`, `MemorySaver` checkpoint 의존, JSON storage와 transcript logging을 활성 경로에서 제거하고 CORS를 제한합니다.
@@ -214,7 +228,9 @@ CSV export는 참여자 코드를 사용하고 audit event를 남깁니다. spre
 ## 연구 사용 전 통과 조건
 
 - 빈 PostgreSQL에 모든 migration을 적용하고 첫 관리자를 생성할 수 있습니다.
-- 로그인·로그아웃·자동 로그인·만료·CSRF·계정 잠금과 세션 폐기 테스트가 통과합니다.
+- 24시간 일반 세션, 30일 rolling·90일 상한 자동 로그인, 갱신 임계점과 만료 테스트가 통과합니다.
+- 첫 5회 실패의 임시 잠금, 다음 5회의 관리자 잠금, 성공 초기화, 관리자 해제와 세션 폐기 테스트가 통과합니다.
+- 로그인·로그아웃·CSRF와 generic 로그인 오류 테스트가 통과합니다.
 - 참여자와 관리자가 상대 역할의 route와 데이터에 접근할 수 없습니다.
 - 중복 turn, LLM 실패, database 실패와 FastAPI 재시작 뒤 마지막 커밋 상태가 유지됩니다.
 - 활성 endpoint가 `_sessions`, `MemorySaver` 또는 JSON 결과 파일을 읽거나 쓰지 않습니다.
