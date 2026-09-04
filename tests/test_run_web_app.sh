@@ -28,6 +28,10 @@ EOF
 
 cat >"$STUB_BIN/npm" <<'EOF'
 #!/usr/bin/env bash
+for _attempt in {1..20}; do
+  [ -f "$CAPTURE_DIR/auth_allowed_origins" ] && break
+  sleep 0.05
+done
 printf '%s\n' "${VITE_API_PORT:-}" >"$CAPTURE_DIR/npm_api_port"
 printf '%s\n' "$*" >"$CAPTURE_DIR/npm_args"
 EOF

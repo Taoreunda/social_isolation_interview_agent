@@ -19,6 +19,7 @@ Do not introduce Streamlit, Gradio, another frontend runtime, hash-based navigat
 - `backend/interview/`: two-node LangGraph ReAct engine, scorecard, tool execution, and prompts
 - `backend/app_core/`: environment, paths, and database configuration
 - `backend/storage/`, `backend/logs/`: temporary JSON persistence and transcript logging to remove after PostgreSQL migration
+- `dev.sh`: primary local stack lifecycle, migration, port selection, and safe process-log view
 - `frontend/src/App.tsx`: provider composition and route tree
 - `frontend/src/app/`: live HTTP adapter, `AppApi` contracts, session state, route guards, and navigation announcements
 - `frontend/src/mocks/`: explicit mock-mode and test-only fixture boundary
@@ -59,7 +60,7 @@ uv sync
 (cd frontend && npm install)
 ```
 
-Run the application with `./run_web_app.sh`. It selects available ports starting at FastAPI `8001` and Vite `5173`, passes the selected frontend origins to FastAPI, then prints the authoritative URLs.
+Run the complete local stack with `./dev.sh start`. It starts the Compose PostgreSQL service, applies Alembic migrations, selects available ports starting at FastAPI `8001` and Vite `5173`, and follows API and frontend logs. `Ctrl-C` exits only the log view; use `./dev.sh stop` to stop the app and database while preserving the database volume. Use `status`, `debug`, `logs`, `restart`, and `admin` for routine local work. `run_web_app.sh` is the lower-level foreground app runner and does not prepare PostgreSQL.
 
 Start the real PostgreSQL test service before auth tests:
 
@@ -79,6 +80,7 @@ uv run python tests/test_flow_scenarios.py
 uv run python tests/test_api_persistence.py
 bash tests/test_run_web_app.sh
 bash tests/test_vite_proxy.sh
+bash tests/test_dev_script.sh
 ```
 
 Legacy Python and shell tests are executable scripts; auth tests use pytest and the PostgreSQL 16 test service. None may require an API key or public network. Frontend behavior changes require observable-state tests covering the affected loading, empty, error, role, active, completed, or review states.
@@ -87,9 +89,9 @@ Legacy Python and shell tests are executable scripts; auth tests use pytest and 
 
 Account/session/audit state is durable in PostgreSQL migration `20260904_0001`. Current LangGraph checkpoints still use process-local `MemorySaver`; `data/web_sessions/` restores reviewer/display snapshots and `data/results/` stores completed results, but neither restores an interrupted graph checkpoint. Never claim restart-safe interview continuation until PostgreSQL repositories replace this path.
 
-`DATABASE_URL` must use PostgreSQL with psycopg 3. `VITE_AUTH_CSRF_COOKIE` must equal `AUTH_CSRF_COOKIE`. Production cookies require `AUTH_COOKIE_SECURE=true`, and `AUTH_ALLOWED_ORIGINS` must contain only deployed application origins. `/api/health` is liveness; `/api/ready` must fail when PostgreSQL is unavailable. Use `backend/manage.py bootstrap-admin` only from a trusted shell/SSM session and schedule `cleanup-sessions` operationally.
+`DATABASE_URL` must use PostgreSQL with psycopg 3. `dev.sh` injects the Compose URL only for local development; deployed processes receive their URL from the environment or secret store. `VITE_AUTH_CSRF_COOKIE` must equal `AUTH_CSRF_COOKIE`. Production cookies require `AUTH_COOKIE_SECURE=true`, and `AUTH_ALLOWED_ORIGINS` must contain only deployed application origins. `/api/health` is liveness; `/api/ready` must fail when PostgreSQL is unavailable. Use `./dev.sh admin` locally and `backend/manage.py bootstrap-admin` only from a trusted AWS shell/SSM session. Schedule `cleanup-sessions` operationally.
 
-Runtime data, `logs/interview_*.json`, and LangSmith traces may contain sensitive content. Never commit or attach them unsanitized. Secrets belong in the root `.env`.
+Local process output is split across `logs/dev.log`, `logs/api.log`, and `logs/frontend.log`; `dev.sh` provides the unified view. Authentication audit events remain in PostgreSQL. This is not a production centralized logging service. Runtime data, `logs/interview_*.json`, and LangSmith traces may contain sensitive content; never include the legacy interview logs in automatic tails or commit or attach them unsanitized. Secrets belong in the root `.env`.
 
 Keep `README.md` for setup and current behavior, this file for contributor rules, `PRODUCT.md` for durable product/UI constraints, and `docs/architecture.md` for the target system. Update these documents with the code that changes their claims.
 

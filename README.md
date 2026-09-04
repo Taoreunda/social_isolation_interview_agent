@@ -22,30 +22,35 @@ uv sync
 (cd frontend && npm install)
 ```
 
-PostgreSQL 16을 실행하고 migration을 적용합니다.
+루트 `.env`에는 필요한 모델 API key와 인증 설정을 추가합니다. 기존 `.env`를 덮어쓰지 마세요. 로컬 PostgreSQL URL은 `dev.sh`가 Compose 설정과 동일한 값으로 주입합니다.
+
+최초 관리자는 비밀번호를 터미널에서 두 번 입력해 생성합니다. 이 명령은 로컬 PostgreSQL을 시작하고 migration을 먼저 적용하므로 별도의 `DATABASE_URL` 설정이 필요하지 않습니다.
 
 ```bash
-docker compose up -d db
-DATABASE_URL=postgresql+psycopg://dabom:dabom-local@127.0.0.1:54329/dabom uv run alembic upgrade head
+./dev.sh admin admin
 ```
 
-루트 `.env`에 `.env.example`의 `DATABASE_URL`과 인증 설정을 추가합니다. 기존 `.env`와 API key를 덮어쓰지 마세요. 최초 관리자는 비밀번호를 터미널에서 두 번 입력해 생성합니다.
-
-```bash
-uv run python backend/manage.py bootstrap-admin --username <관리자_사용자명>
-```
-
-안전한 임시 비밀번호를 생성해 한 번만 출력하려면 `--generate-password`를 추가합니다. 이미 관리자가 있으면 bootstrap 명령은 거부됩니다.
+비밀번호는 저장하거나 출력하지 않고 대화형 입력으로만 받습니다. 이미 관리자가 있으면 bootstrap 명령은 거부됩니다.
 
 ## 실행
 
-전체 개발 프로세스를 실행합니다.
+로컬 PostgreSQL, migration, FastAPI와 React 개발 서버를 한 번에 실행합니다.
 
 ```bash
-./run_web_app.sh
+./dev.sh start
 ```
 
-기본 포트는 FastAPI `8001`, Vite `5173`입니다. 사용 중인 포트가 있으면 다음 빈 포트를 자동 선택하므로 터미널에 출력된 주소를 사용하세요. 이 스크립트는 PostgreSQL을 시작하거나 migration을 자동 적용하지 않습니다.
+기본 포트는 FastAPI `8001`, Vite `5173`입니다. 사용 중이면 다음 빈 포트를 자동 선택하므로 터미널에 출력된 주소를 사용하세요. 시작이 끝나면 API와 프론트엔드 로그가 함께 표시됩니다. `Ctrl-C`는 로그 보기만 닫으며 서버는 계속 실행됩니다.
+
+```bash
+./dev.sh status                 # 실제 포트와 readiness 확인
+./dev.sh debug                  # API·프론트엔드 로그 다시 보기
+./dev.sh logs all               # 최근 로그만 출력
+./dev.sh restart                # 재시작 후 로그 보기
+./dev.sh stop                   # 앱과 DB 중지, DB volume 보존
+```
+
+자동화에서 로그를 계속 보지 않으려면 `./dev.sh start --detach`를 사용합니다. `run_web_app.sh`는 DB 준비 없이 FastAPI와 Vite만 실행하는 하위 수준 foreground runner입니다.
 
 프론트엔드 개발 서버만 실행할 수도 있습니다. 기본값은 라이브 API이며 FastAPI가 함께 실행 중이어야 합니다.
 
@@ -116,6 +121,7 @@ uv run python tests/test_flow_scenarios.py
 uv run python tests/test_api_persistence.py
 bash tests/test_run_web_app.sh
 bash tests/test_vite_proxy.sh
+bash tests/test_dev_script.sh
 ```
 
 ## 구조
@@ -129,6 +135,17 @@ bash tests/test_vite_proxy.sh
 - `frontend/src/mocks/`: 명시적 mock 모드와 테스트 전용 fixture
 - `frontend/src/layouts/`, `pages/`, `features/`: 역할별 화면과 기능
 - `interview_flow.json`: 질문 metadata
+
+## 로그
+
+`dev.sh start`와 `dev.sh debug`는 안전한 개발 프로세스 로그를 한 화면에서 보여줍니다.
+
+- `logs/api.log`: Uvicorn/FastAPI와 HTTP access log
+- `logs/frontend.log`: Vite 개발 서버 log
+- `logs/dev.log`: launcher 출력
+- PostgreSQL `audit_events`: 계정 생성·변경·잠금·해제 기록
+
+이는 로컬 개발용 통합 조회이며 외부 중앙 로그 서비스는 아닙니다. 기존 `logs/interview_*.json`은 메시지와 모델 처리 내용을 포함할 수 있는 임시 레거시 기록이라 자동 표시하지 않습니다. 실제 연구 배포에서는 애플리케이션 표준 출력·오류를 CloudWatch Logs로 수집하고, 인증 감사 기록은 PostgreSQL에 유지하는 구성을 사용합니다.
 
 ## 연구 데이터 주의
 

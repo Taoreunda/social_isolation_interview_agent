@@ -23,6 +23,7 @@ node_modules/
 .playwright-mcp/
 .worktrees/
 .superpowers/
+.run/
 
 # Runtime artifacts
 logs/*.json

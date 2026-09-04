@@ -37,7 +37,7 @@ Browser
 
 로컬과 AWS는 같은 PostgreSQL major version과 migration을 사용합니다.
 
-- 로컬: 컨테이너 PostgreSQL 16, 호스트의 FastAPI와 Vite
+- 로컬: `dev.sh`가 준비하는 컨테이너 PostgreSQL 16과 호스트의 FastAPI·Vite
 - AWS: 정적 React build와 FastAPI를 실행하는 작은 EC2, EC2 보안 그룹에서만 접근 가능한 private RDS
 - `DATABASE_URL`로 연결 대상을 선택하고 AWS 연결은 TLS 인증서를 검증합니다.
 - migration은 Alembic으로 명시적으로 실행하며 애플리케이션 시작 시 자동 적용하지 않습니다.
@@ -230,7 +230,10 @@ CSV export는 참여자 코드를 사용하고 audit event를 남깁니다. spre
 
 ## 개인정보와 운영
 
-- 로그에는 request ID와 운영 metadata만 남기고 메시지, 판단 근거, 비밀번호, token과 진단을 기록하지 않습니다.
+- 현재 로컬 프로세스 로그는 `logs/api.log`, `logs/frontend.log`, `logs/dev.log`로 분리하고 `dev.sh`에서 함께 조회합니다. 이는 개발 편의를 위한 단일 진입점이며 중앙 로그 서비스는 아닙니다.
+- 계정 생성·변경·잠금·해제 감사 기록은 PostgreSQL `audit_events`에 보존합니다.
+- 기존 `logs/interview_*.json`은 메시지와 모델 처리 내용을 포함할 수 있는 레거시 기록이므로 통합 조회에서 제외하고, 인터뷰 PostgreSQL 전환 때 활성 경로에서 제거합니다.
+- AWS 배포에서는 FastAPI의 구조화된 표준 출력·오류를 CloudWatch Logs로 수집하도록 구성합니다. 운영 로그에는 request ID와 최소 metadata만 남기고 메시지, 판단 근거, 비밀번호, token과 진단을 기록하지 않습니다.
 - LangSmith 추적은 기본으로 끕니다. 실제 참여자 데이터 추적은 별도의 연구 데이터 승인 뒤에만 사용합니다.
 - raw database와 backup 접근은 배포 환경의 연구 관리자에게만 허용합니다.
 - backup 보존 기간과 최종 삭제는 승인된 연구 protocol을 따릅니다.
