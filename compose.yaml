@@ -1,0 +1,38 @@
+name: dabom
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: dabom
+      POSTGRES_USER: dabom
+      POSTGRES_PASSWORD: dabom-local
+    ports:
+      - "${POSTGRES_PORT:-54329}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dabom -d dabom"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - dabom_postgres_data:/var/lib/postgresql/data
+
+  db-test:
+    image: postgres:16
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: dabom_test
+      POSTGRES_USER: dabom
+      POSTGRES_PASSWORD: dabom-local
+    ports:
+      - "${POSTGRES_TEST_PORT:-54330}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dabom -d dabom_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /var/lib/postgresql/data
+
+volumes:
+  dabom_postgres_data:
