@@ -6,8 +6,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, or_, select, update
+from sqlalchemy.orm import Session, joinedload
 
 from auth.models import AuditEvent, AuthSession, UserAccount
 
@@ -28,6 +28,13 @@ class AuthRepository:
             .with_for_update()
         )
 
+    def get_account_for_update(self, user_id: UUID) -> UserAccount | None:
+        return self.session.scalar(
+            select(UserAccount)
+            .where(UserAccount.id == user_id)
+            .with_for_update()
+        )
+
     def revoke_all_sessions(self, user_id: UUID, now: datetime) -> int:
         result = self.session.execute(
             update(AuthSession)
@@ -43,6 +50,28 @@ class AuthRepository:
         self.session.add(auth_session)
         self.session.flush()
         return auth_session
+
+    def get_session_by_digest_for_update(
+        self,
+        token_hash: str,
+    ) -> AuthSession | None:
+        return self.session.scalar(
+            select(AuthSession)
+            .where(AuthSession.token_hash == token_hash)
+            .options(joinedload(AuthSession.user))
+            .with_for_update(of=AuthSession)
+        )
+
+    def delete_sessions_older_than(self, cutoff: datetime) -> int:
+        result = self.session.execute(
+            delete(AuthSession).where(
+                or_(
+                    AuthSession.expires_at <= cutoff,
+                    AuthSession.revoked_at <= cutoff,
+                )
+            )
+        )
+        return int(result.rowcount or 0)
 
     def add_audit_event(
         self,

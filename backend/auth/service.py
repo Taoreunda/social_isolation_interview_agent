@@ -4,18 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from auth.models import AuthSession, UserAccount
 from auth.policy import (
     AccountStatus,
+    LAST_SEEN_WRITE_INTERVAL,
     LOGIN_WINDOW,
     MAX_LOGIN_FAILURES,
     NORMAL_SESSION_DURATION,
     PolicyViolation,
     REMEMBERED_ABSOLUTE_DURATION,
+    REMEMBERED_RENEWAL_THRESHOLD,
     REMEMBERED_SESSION_DURATION,
     SessionKind,
     TEMPORARY_LOCK_DURATION,
@@ -37,6 +40,21 @@ class IssuedLogin:
     auth_session: AuthSession
     session_token: str
     csrf_token: str
+
+
+@dataclass(frozen=True)
+class AuthContext:
+    account: UserAccount
+    auth_session: AuthSession
+    cookie_renewed: bool
+
+
+class AuthenticationRequired(Exception):
+    """Raised when a server session cannot authenticate a request."""
+
+
+class InvalidCurrentPassword(Exception):
+    """Raised when an authenticated password change cannot verify its secret."""
 
 
 class AuthenticationService:
@@ -173,3 +191,88 @@ class AuthenticationService:
         if issued_login is None:
             raise RuntimeError("Login completed without issuing a session")
         return issued_login
+
+    def authenticate(self, raw_token: str) -> AuthContext:
+        now = self.clock()
+        context: AuthContext | None = None
+        with self.session.begin():
+            auth_session = self.repository.get_session_by_digest_for_update(
+                self.token_service.digest(raw_token)
+            )
+            if (
+                auth_session is not None
+                and auth_session.revoked_at is None
+                and now < auth_session.expires_at
+                and now < auth_session.absolute_expires_at
+                and auth_session.user.status == AccountStatus.ACTIVE.value
+            ):
+                cookie_renewed = False
+                if (
+                    auth_session.kind == SessionKind.REMEMBERED.value
+                    and auth_session.expires_at - now
+                    <= REMEMBERED_RENEWAL_THRESHOLD
+                ):
+                    renewed_expiry = min(
+                        now + REMEMBERED_SESSION_DURATION,
+                        auth_session.absolute_expires_at,
+                    )
+                    if renewed_expiry > auth_session.expires_at:
+                        auth_session.expires_at = renewed_expiry
+                        cookie_renewed = True
+                if now - auth_session.last_seen_at >= LAST_SEEN_WRITE_INTERVAL:
+                    auth_session.last_seen_at = now
+                context = AuthContext(
+                    account=auth_session.user,
+                    auth_session=auth_session,
+                    cookie_renewed=cookie_renewed,
+                )
+
+        if context is None:
+            raise AuthenticationRequired
+        return context
+
+    def logout(self, raw_token: str) -> None:
+        now = self.clock()
+        with self.session.begin():
+            auth_session = self.repository.get_session_by_digest_for_update(
+                self.token_service.digest(raw_token)
+            )
+            if auth_session is not None and auth_session.revoked_at is None:
+                auth_session.revoked_at = now
+
+    def change_password(
+        self,
+        user_id: UUID,
+        *,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        now = self.clock()
+        with self.session.begin():
+            account = self.repository.get_account_for_update(user_id)
+            if account is None or account.status != AccountStatus.ACTIVE.value:
+                raise AuthenticationRequired
+            if not self.password_service.verify(
+                account.password_hash,
+                current_password,
+            ):
+                raise InvalidCurrentPassword
+
+            account.password_hash = self.password_service.hash(new_password)
+            account.password_changed_at = now
+            account.updated_at = now
+            self.repository.revoke_all_sessions(account.id, now)
+            self.repository.add_audit_event(
+                actor_user_id=account.id,
+                action="account.password_changed",
+                target_type="user_account",
+                target_id=account.id,
+                occurred_at=now,
+            )
+
+    def cleanup_sessions(self, *, retention: timedelta) -> int:
+        if retention < timedelta(0):
+            raise ValueError("Session retention cannot be negative")
+        cutoff = self.clock() - retention
+        with self.session.begin():
+            return self.repository.delete_sessions_older_than(cutoff)
