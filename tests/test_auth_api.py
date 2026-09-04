@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
-import pytest
-from argon2 import PasswordHasher
-from fastapi.testclient import TestClient
-from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import api
-from auth.models import UserAccount
+import pytest
+from argon2 import PasswordHasher
+from auth.models import AuditEvent, AuthSession, UserAccount
 from auth.policy import AccountStatus, Role
 from auth.security import PasswordService
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 ALLOWED_ORIGIN = "http://127.0.0.1:5173"
 VALID_PASSWORD = "research-passphrase"
@@ -21,7 +22,7 @@ VALID_PASSWORD = "research-passphrase"
 
 class ApiClock:
     def __init__(self) -> None:
-        self.now = datetime(2026, 9, 4, 1, 0, tzinfo=timezone.utc)
+        self.now = datetime(2026, 9, 4, 1, 0, tzinfo=UTC)
 
     def __call__(self) -> datetime:
         return self.now
@@ -32,9 +33,7 @@ class ApiClock:
 
 @pytest.fixture
 def api_password_service() -> PasswordService:
-    return PasswordService(
-        PasswordHasher(time_cost=1, memory_cost=8192, parallelism=1)
-    )
+    return PasswordService(PasswordHasher(time_cost=1, memory_cost=8192, parallelism=1))
 
 
 @pytest.fixture
@@ -42,7 +41,7 @@ def api_participant(
     db_session: Session,
     api_password_service: PasswordService,
 ) -> UserAccount:
-    now = datetime(2026, 9, 4, 1, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 4, 1, 0, tzinfo=UTC)
     account = UserAccount(
         normalized_username="participant-001",
         display_username="participant-001",
@@ -50,6 +49,28 @@ def api_participant(
         role=Role.PARTICIPANT.value,
         status=AccountStatus.ACTIVE.value,
         participant_code="P-001",
+        created_at=now,
+        updated_at=now,
+        password_changed_at=now,
+    )
+    db_session.add(account)
+    db_session.commit()
+    return account
+
+
+@pytest.fixture
+def api_admin(
+    db_session: Session,
+    api_password_service: PasswordService,
+) -> UserAccount:
+    now = datetime(2026, 9, 4, 1, 0, tzinfo=UTC)
+    account = UserAccount(
+        normalized_username="research-admin",
+        display_username="research-admin",
+        password_hash=api_password_service.hash(VALID_PASSWORD),
+        role=Role.ADMIN.value,
+        status=AccountStatus.ACTIVE.value,
+        participant_code=None,
         created_at=now,
         updated_at=now,
         password_changed_at=now,
@@ -389,3 +410,404 @@ def test_logout_database_failure_returns_safe_service_unavailable(
     assert response.status_code == 503
     assert response.json() == {"detail": "필수 서비스를 사용할 수 없습니다."}
     assert "offline" not in response.text
+
+
+def test_admin_creates_participant_with_one_time_generated_password(
+    api_admin: UserAccount,
+    api_password_service: PasswordService,
+    db_session: Session,
+) -> None:
+    with TestClient(api.app) as client:
+        login = client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_admin.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        csrf_token = client.cookies.get("dabom_csrf")
+        assert login.status_code == 200
+        assert csrf_token is not None
+
+        response = client.post(
+            "/api/admin/participants",
+            headers={"Origin": ALLOWED_ORIGIN, "X-CSRF-Token": csrf_token},
+            json={
+                "username": "participant-002",
+                "participantCode": "p-002",
+                "generatePassword": True,
+            },
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["participant"] == {
+        "id": payload["participant"]["id"],
+        "username": "participant-002",
+        "participantCode": "P-002",
+        "status": "active",
+    }
+    assigned_password = payload["assignedPassword"]
+    assert len(assigned_password) == 20
+    assert "passwordHash" not in response.text
+
+    created = db_session.scalar(
+        select(UserAccount).where(UserAccount.normalized_username == "participant-002")
+    )
+    assert created is not None
+    assert api_password_service.verify(created.password_hash, assigned_password)
+    event = db_session.scalar(
+        select(AuditEvent).where(AuditEvent.action == "account.created")
+    )
+    assert event is not None
+    assert event.actor_user_id == api_admin.id
+    assert event.target_id == created.id
+    assert event.details == {"role": "participant"}
+
+
+def test_admin_lists_participants_including_administrator_lock_state(
+    api_admin: UserAccount,
+    api_participant: UserAccount,
+    db_session: Session,
+) -> None:
+    api_participant.status = AccountStatus.ADMIN_LOCKED.value
+    db_session.commit()
+
+    with TestClient(api.app) as client:
+        login = client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_admin.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        assert login.status_code == 200
+
+        response = client.get("/api/admin/participants")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": str(api_participant.id),
+            "username": api_participant.display_username,
+            "participantCode": api_participant.participant_code,
+            "status": "admin_locked",
+        }
+    ]
+
+
+def test_participant_cannot_use_admin_route_and_keeps_session(
+    api_participant: UserAccount,
+) -> None:
+    with TestClient(api.app) as client:
+        login = client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_participant.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        assert login.status_code == 200
+
+        forbidden = client.get("/api/admin/participants")
+        current_user = client.get("/api/auth/me")
+
+    assert forbidden.status_code == 403
+    assert current_user.status_code == 200
+    assert current_user.json()["role"] == "participant"
+
+
+def test_admin_password_reset_revokes_only_target_sessions_and_returns_password_once(
+    api_admin: UserAccount,
+    api_participant: UserAccount,
+    api_password_service: PasswordService,
+    db_session: Session,
+) -> None:
+    with TestClient(api.app) as participant_client:
+        participant_login = participant_client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_participant.display_username,
+                "password": VALID_PASSWORD,
+                "remember": True,
+            },
+        )
+        assert participant_login.status_code == 200
+
+    with TestClient(api.app) as admin_client:
+        admin_login = admin_client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_admin.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        csrf_token = admin_client.cookies.get("dabom_csrf")
+        assert admin_login.status_code == 200
+        assert csrf_token is not None
+
+        response = admin_client.post(
+            f"/api/admin/participants/{api_participant.id}/password",
+            headers={"Origin": ALLOWED_ORIGIN, "X-CSRF-Token": csrf_token},
+            json={"generatePassword": True},
+        )
+        admin_still_authenticated = admin_client.get("/api/auth/me")
+
+    assert response.status_code == 200
+    assigned_password = response.json()["assignedPassword"]
+    assert len(assigned_password) == 20
+    db_session.refresh(api_participant)
+    assert api_password_service.verify(api_participant.password_hash, assigned_password)
+    sessions = db_session.scalars(select(AuthSession)).all()
+    for auth_session in sessions:
+        db_session.refresh(auth_session)
+    target_sessions = [
+        auth_session
+        for auth_session in sessions
+        if auth_session.user_id == api_participant.id
+    ]
+    admin_sessions = [
+        auth_session
+        for auth_session in sessions
+        if auth_session.user_id == api_admin.id
+    ]
+    assert target_sessions
+    assert all(auth_session.revoked_at is not None for auth_session in target_sessions)
+    assert admin_sessions
+    assert all(auth_session.revoked_at is None for auth_session in admin_sessions)
+    assert admin_still_authenticated.status_code == 200
+    event = db_session.scalar(
+        select(AuditEvent).where(AuditEvent.action == "account.password_reset")
+    )
+    assert event is not None
+    assert event.actor_user_id == api_admin.id
+    assert event.target_id == api_participant.id
+
+
+def test_admin_disable_revokes_target_session_and_writes_audit(
+    api_admin: UserAccount,
+    api_participant: UserAccount,
+    db_session: Session,
+) -> None:
+    with TestClient(api.app) as participant_client, TestClient(api.app) as admin_client:
+        participant_login = participant_client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_participant.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        admin_login = admin_client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_admin.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        csrf_token = admin_client.cookies.get("dabom_csrf")
+        assert participant_login.status_code == 200
+        assert admin_login.status_code == 200
+        assert csrf_token is not None
+
+        response = admin_client.post(
+            f"/api/admin/participants/{api_participant.id}/disable",
+            headers={"Origin": ALLOWED_ORIGIN, "X-CSRF-Token": csrf_token},
+        )
+        target_session = participant_client.get("/api/auth/me")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "disabled"
+    assert target_session.status_code == 401
+    db_session.refresh(api_participant)
+    assert api_participant.status == AccountStatus.DISABLED.value
+    event = db_session.scalar(
+        select(AuditEvent).where(AuditEvent.action == "account.disabled")
+    )
+    assert event is not None
+    assert event.actor_user_id == api_admin.id
+    assert event.target_id == api_participant.id
+
+
+def test_admin_unlock_resets_failure_state_without_restoring_old_session(
+    api_admin: UserAccount,
+    api_participant: UserAccount,
+    db_session: Session,
+) -> None:
+    with TestClient(api.app) as participant_client:
+        participant_login = participant_client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_participant.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        assert participant_login.status_code == 200
+
+        locked_at = datetime(2026, 9, 4, 2, 0, tzinfo=UTC)
+        api_participant.status = AccountStatus.ADMIN_LOCKED.value
+        api_participant.failed_login_count = 4
+        api_participant.failure_window_started_at = locked_at - timedelta(minutes=2)
+        api_participant.temporary_locked_until = locked_at + timedelta(minutes=10)
+        api_participant.lock_stage = 1
+        api_participant.admin_locked_at = locked_at
+        db_session.commit()
+
+        with TestClient(api.app) as admin_client:
+            admin_login = admin_client.post(
+                "/api/auth/login",
+                headers={"Origin": ALLOWED_ORIGIN},
+                json={
+                    "username": api_admin.display_username,
+                    "password": VALID_PASSWORD,
+                },
+            )
+            csrf_token = admin_client.cookies.get("dabom_csrf")
+            assert admin_login.status_code == 200
+            assert csrf_token is not None
+
+            response = admin_client.post(
+                f"/api/admin/participants/{api_participant.id}/unlock",
+                headers={"Origin": ALLOWED_ORIGIN, "X-CSRF-Token": csrf_token},
+            )
+        old_session = participant_client.get("/api/auth/me")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "active"
+    assert old_session.status_code == 401
+    db_session.refresh(api_participant)
+    assert api_participant.failed_login_count == 0
+    assert api_participant.failure_window_started_at is None
+    assert api_participant.temporary_locked_until is None
+    assert api_participant.lock_stage == 0
+    assert api_participant.last_unlocked_by_user_id == api_admin.id
+    assert api_participant.last_unlocked_at is not None
+    event = db_session.scalar(
+        select(AuditEvent).where(AuditEvent.action == "account.unlocked")
+    )
+    assert event is not None
+    assert event.actor_user_id == api_admin.id
+    assert event.target_id == api_participant.id
+
+
+def test_direct_password_is_not_echoed_and_normalized_duplicates_conflict(
+    api_admin: UserAccount,
+) -> None:
+    direct_password = "direct-research-passphrase"
+    with TestClient(api.app) as client:
+        login = client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_admin.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        csrf_token = client.cookies.get("dabom_csrf")
+        assert login.status_code == 200
+        assert csrf_token is not None
+        headers = {"Origin": ALLOWED_ORIGIN, "X-CSRF-Token": csrf_token}
+
+        created = client.post(
+            "/api/admin/participants",
+            headers=headers,
+            json={
+                "username": "participant-003",
+                "participantCode": "P-003",
+                "password": direct_password,
+            },
+        )
+        duplicate_username = client.post(
+            "/api/admin/participants",
+            headers=headers,
+            json={
+                "username": "PARTICIPANT-003",
+                "participantCode": "P-004",
+                "password": direct_password,
+            },
+        )
+        duplicate_code = client.post(
+            "/api/admin/participants",
+            headers=headers,
+            json={
+                "username": "participant-004",
+                "participantCode": "p-003",
+                "password": direct_password,
+            },
+        )
+
+    assert created.status_code == 201
+    assert created.json()["assignedPassword"] is None
+    assert direct_password not in created.text
+    assert duplicate_username.status_code == 409
+    assert duplicate_code.status_code == 409
+    assert duplicate_username.json() == duplicate_code.json()
+
+
+def test_unlock_rejects_non_locked_or_missing_participant(
+    api_admin: UserAccount,
+    api_participant: UserAccount,
+) -> None:
+    with TestClient(api.app) as client:
+        login = client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_admin.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        csrf_token = client.cookies.get("dabom_csrf")
+        assert login.status_code == 200
+        assert csrf_token is not None
+        headers = {"Origin": ALLOWED_ORIGIN, "X-CSRF-Token": csrf_token}
+
+        active = client.post(
+            f"/api/admin/participants/{api_participant.id}/unlock",
+            headers=headers,
+        )
+        missing = client.post(
+            f"/api/admin/participants/{uuid4()}/unlock",
+            headers=headers,
+        )
+
+    assert active.status_code == 409
+    assert missing.status_code == 404
+
+
+def test_participant_cannot_run_administrator_mutation_with_valid_csrf(
+    api_participant: UserAccount,
+) -> None:
+    with TestClient(api.app) as client:
+        login = client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_participant.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        csrf_token = client.cookies.get("dabom_csrf")
+        assert login.status_code == 200
+        assert csrf_token is not None
+
+        forbidden = client.post(
+            "/api/admin/participants",
+            headers={"Origin": ALLOWED_ORIGIN, "X-CSRF-Token": csrf_token},
+            json={
+                "username": "participant-005",
+                "participantCode": "P-005",
+                "generatePassword": True,
+            },
+        )
+        current_user = client.get("/api/auth/me")
+
+    assert forbidden.status_code == 403
+    assert current_user.status_code == 200

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
-from auth.policy import Role
+from auth.policy import AccountStatus, Role
 
 
 def _to_camel(value: str) -> str:
@@ -38,3 +38,43 @@ class CurrentUserResponse(ApiSchema):
 class ChangePasswordRequest(ApiSchema):
     current_password: str
     new_password: str
+
+
+class CreateParticipantRequest(ApiSchema):
+    username: str
+    participant_code: str
+    password: str | None = None
+    generate_password: bool = False
+
+    @model_validator(mode="after")
+    def require_one_password_source(self) -> CreateParticipantRequest:
+        if self.generate_password == (self.password is not None):
+            raise ValueError("Provide a password or request generation")
+        return self
+
+
+class ParticipantResponse(ApiSchema):
+    id: UUID
+    username: str
+    participant_code: str
+    status: AccountStatus
+
+
+class ParticipantCredentialResponse(ApiSchema):
+    participant: ParticipantResponse
+    assigned_password: str | None
+
+
+class ResetParticipantPasswordRequest(ApiSchema):
+    password: str | None = None
+    generate_password: bool = False
+
+    @model_validator(mode="after")
+    def require_one_password_source(self) -> ResetParticipantPasswordRequest:
+        if self.generate_password == (self.password is not None):
+            raise ValueError("Provide a password or request generation")
+        return self
+
+
+class PasswordAssignmentResponse(ApiSchema):
+    assigned_password: str | None

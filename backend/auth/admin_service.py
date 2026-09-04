@@ -1,0 +1,213 @@
+"""Transactional administrator operations for centrally managed accounts."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import datetime
+from uuid import UUID
+
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from auth.models import UserAccount
+from auth.policy import (
+    AccountStatus,
+    Role,
+    normalize_participant_code,
+    normalize_username,
+)
+from auth.repository import AuthRepository
+from auth.security import PasswordService
+
+
+class AccountConflict(Exception):
+    """Raised when a normalized account identifier already exists."""
+
+
+class AccountNotFound(Exception):
+    """Raised when an administrator target is not a participant account."""
+
+
+class AccountStateConflict(Exception):
+    """Raised when an account transition is invalid for its current state."""
+
+
+class BootstrapAdminExists(Exception):
+    """Raised when the first-administrator command has already been used."""
+
+
+class AccountAdministrationService:
+    """Own centrally managed participant account mutations."""
+
+    def __init__(
+        self,
+        session: Session,
+        *,
+        password_service: PasswordService | None = None,
+        clock: Callable[[], datetime],
+    ) -> None:
+        self.session = session
+        self.repository = AuthRepository(session)
+        self.password_service = password_service or PasswordService()
+        self.clock = clock
+
+    def bootstrap_admin(self, *, username: str, password: str) -> UserAccount:
+        normalized_username = normalize_username(username)
+        password_hash = self.password_service.hash(password)
+        now = self.clock()
+        try:
+            with self.session.begin():
+                self.repository.lock_admin_bootstrap()
+                if self.repository.has_admin():
+                    raise BootstrapAdminExists
+                account = self.repository.add_account(
+                    UserAccount(
+                        normalized_username=normalized_username,
+                        display_username=username.strip(),
+                        password_hash=password_hash,
+                        role=Role.ADMIN.value,
+                        status=AccountStatus.ACTIVE.value,
+                        participant_code=None,
+                        created_by_user_id=None,
+                        created_at=now,
+                        updated_at=now,
+                        password_changed_at=now,
+                    )
+                )
+                self.repository.add_audit_event(
+                    actor_user_id=None,
+                    action="account.created",
+                    target_type="user_account",
+                    target_id=account.id,
+                    occurred_at=now,
+                    details={"role": Role.ADMIN.value, "source": "bootstrap"},
+                )
+        except IntegrityError as exc:
+            raise AccountConflict from exc
+        return account
+
+    def list_participants(self) -> list[UserAccount]:
+        with self.session.begin():
+            return self.repository.list_participants()
+
+    def create_participant(
+        self,
+        *,
+        actor_user_id: UUID,
+        username: str,
+        participant_code: str,
+        password: str,
+    ) -> UserAccount:
+        normalized_username = normalize_username(username)
+        normalized_code = normalize_participant_code(participant_code)
+        password_hash = self.password_service.hash(password)
+        now = self.clock()
+        try:
+            with self.session.begin():
+                account = self.repository.add_account(
+                    UserAccount(
+                        normalized_username=normalized_username,
+                        display_username=username.strip(),
+                        password_hash=password_hash,
+                        role=Role.PARTICIPANT.value,
+                        status=AccountStatus.ACTIVE.value,
+                        participant_code=normalized_code,
+                        created_by_user_id=actor_user_id,
+                        created_at=now,
+                        updated_at=now,
+                        password_changed_at=now,
+                    )
+                )
+                self.repository.add_audit_event(
+                    actor_user_id=actor_user_id,
+                    action="account.created",
+                    target_type="user_account",
+                    target_id=account.id,
+                    occurred_at=now,
+                    details={"role": Role.PARTICIPANT.value},
+                )
+        except IntegrityError as exc:
+            raise AccountConflict from exc
+        return account
+
+    def reset_participant_password(
+        self,
+        *,
+        actor_user_id: UUID,
+        participant_id: UUID,
+        password: str,
+    ) -> UserAccount:
+        password_hash = self.password_service.hash(password)
+        now = self.clock()
+        with self.session.begin():
+            account = self.repository.get_participant_for_update(participant_id)
+            if account is None:
+                raise AccountNotFound
+            account.password_hash = password_hash
+            account.password_changed_at = now
+            account.updated_at = now
+            self.repository.revoke_all_sessions(account.id, now)
+            self.repository.add_audit_event(
+                actor_user_id=actor_user_id,
+                action="account.password_reset",
+                target_type="user_account",
+                target_id=account.id,
+                occurred_at=now,
+            )
+        return account
+
+    def disable_participant(
+        self,
+        *,
+        actor_user_id: UUID,
+        participant_id: UUID,
+    ) -> UserAccount:
+        now = self.clock()
+        with self.session.begin():
+            account = self.repository.get_participant_for_update(participant_id)
+            if account is None:
+                raise AccountNotFound
+            if account.status == AccountStatus.DISABLED.value:
+                raise AccountStateConflict
+            account.status = AccountStatus.DISABLED.value
+            account.updated_at = now
+            self.repository.revoke_all_sessions(account.id, now)
+            self.repository.add_audit_event(
+                actor_user_id=actor_user_id,
+                action="account.disabled",
+                target_type="user_account",
+                target_id=account.id,
+                occurred_at=now,
+            )
+        return account
+
+    def unlock_participant(
+        self,
+        *,
+        actor_user_id: UUID,
+        participant_id: UUID,
+    ) -> UserAccount:
+        now = self.clock()
+        with self.session.begin():
+            account = self.repository.get_participant_for_update(participant_id)
+            if account is None:
+                raise AccountNotFound
+            if account.status != AccountStatus.ADMIN_LOCKED.value:
+                raise AccountStateConflict
+            account.status = AccountStatus.ACTIVE.value
+            account.failed_login_count = 0
+            account.failure_window_started_at = None
+            account.temporary_locked_until = None
+            account.lock_stage = 0
+            account.last_unlocked_by_user_id = actor_user_id
+            account.last_unlocked_at = now
+            account.updated_at = now
+            self.repository.revoke_all_sessions(account.id, now)
+            self.repository.add_audit_event(
+                actor_user_id=actor_user_id,
+                action="account.unlocked",
+                target_type="user_account",
+                target_id=account.id,
+                occurred_at=now,
+            )
+        return account

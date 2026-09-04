@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from app_core.database import Base
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -20,8 +21,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app_core.database import Base
 
 
 class UserAccount(Base):
@@ -130,14 +129,18 @@ class AuthSession(Base):
         ForeignKey("user_accounts.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    token_hash: Mapped[str] = mapped_column(
-        String(64), nullable=False, unique=True
-    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     csrf_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     absolute_expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -168,7 +171,9 @@ class AuditEvent(Base):
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     target_type: Mapped[str] = mapped_column(String(64), nullable=False)
     target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     details: Mapped[dict[str, Any]] = mapped_column(
         "metadata",
         JSONB,

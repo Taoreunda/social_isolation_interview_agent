@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from argon2 import PasswordHasher
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from auth.models import AuditEvent, AuthSession, UserAccount
 from auth.policy import AccountStatus, Role, SessionKind
 from auth.security import PasswordService, TokenService
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 VALID_PASSWORD = "research-passphrase"
 
 
 class MutableClock:
     def __init__(self) -> None:
-        self.now = datetime(2026, 9, 4, 1, 0, tzinfo=timezone.utc)
+        self.now = datetime(2026, 9, 4, 1, 0, tzinfo=UTC)
 
     def __call__(self) -> datetime:
         return self.now
@@ -34,9 +33,7 @@ def clock() -> MutableClock:
 
 @pytest.fixture
 def password_service() -> PasswordService:
-    return PasswordService(
-        PasswordHasher(time_cost=1, memory_cost=8192, parallelism=1)
-    )
+    return PasswordService(PasswordHasher(time_cost=1, memory_cost=8192, parallelism=1))
 
 
 @pytest.fixture

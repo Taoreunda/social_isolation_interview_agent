@@ -11,17 +11,17 @@ from sqlalchemy.orm import Session
 
 from auth.models import AuthSession, UserAccount
 from auth.policy import (
-    AccountStatus,
     LAST_SEEN_WRITE_INTERVAL,
     LOGIN_WINDOW,
     MAX_LOGIN_FAILURES,
     NORMAL_SESSION_DURATION,
-    PolicyViolation,
     REMEMBERED_ABSOLUTE_DURATION,
     REMEMBERED_RENEWAL_THRESHOLD,
     REMEMBERED_SESSION_DURATION,
-    SessionKind,
     TEMPORARY_LOCK_DURATION,
+    AccountStatus,
+    PolicyViolation,
+    SessionKind,
     normalize_username,
 )
 from auth.repository import AuthRepository
@@ -94,8 +94,7 @@ class AuthenticationService:
                 and now < account.temporary_locked_until
             )
             account_available = bool(
-                account is not None
-                and account.status == AccountStatus.ACTIVE.value
+                account is not None and account.status == AccountStatus.ACTIVE.value
             )
             password_matches = False
             replacement_hash: str | None = None
@@ -110,11 +109,7 @@ class AuthenticationService:
                 self.password_service.verify(_DUMMY_PASSWORD_HASH, password)
             if not account_available or temporarily_locked or not password_matches:
                 invalid = True
-                if (
-                    account_available
-                    and account is not None
-                    and not temporarily_locked
-                ):
+                if account_available and account is not None and not temporarily_locked:
                     if (
                         account.temporary_locked_until is not None
                         and now >= account.temporary_locked_until
@@ -210,8 +205,7 @@ class AuthenticationService:
                 cookie_renewed = False
                 if (
                     auth_session.kind == SessionKind.REMEMBERED.value
-                    and auth_session.expires_at - now
-                    <= REMEMBERED_RENEWAL_THRESHOLD
+                    and auth_session.expires_at - now <= REMEMBERED_RENEWAL_THRESHOLD
                 ):
                     renewed_expiry = min(
                         now + REMEMBERED_SESSION_DURATION,

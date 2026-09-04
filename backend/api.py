@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from app_core.config import bootstrap
 from app_core.database import check_database
+from auth.admin_router import router as admin_router
 from auth.dependencies import get_allowed_origins
 from auth.router import router as auth_router
 from interview.engine import InterviewEngine
@@ -45,6 +46,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-CSRF-Token"],
 )
 app.include_router(auth_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
 
 # ── Session storage ──
 # In-memory per-session engines (single-server deployment)

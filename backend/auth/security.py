@@ -66,7 +66,12 @@ def generate_password(length: int = 20) -> str:
     if length < 16:
         raise PolicyViolation("Generated passwords must contain at least 16 characters")
 
-    groups = (string.ascii_lowercase, string.ascii_uppercase, string.digits, _PASSWORD_PUNCTUATION)
+    groups = (
+        string.ascii_lowercase,
+        string.ascii_uppercase,
+        string.digits,
+        _PASSWORD_PUNCTUATION,
+    )
     alphabet = "".join(groups)
     characters = [secrets.choice(group) for group in groups]
     characters.extend(secrets.choice(alphabet) for _ in range(length - len(characters)))

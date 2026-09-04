@@ -5,14 +5,15 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from app_core.config import get_bool_config, get_config_value, get_list_config
+from app_core.database import DatabaseConfigurationError, get_session_factory
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app_core.config import get_bool_config, get_config_value, get_list_config
-from app_core.database import DatabaseConfigurationError, get_session_factory
+from auth.admin_service import AccountAdministrationService
 from auth.policy import Role, SessionKind
 from auth.security import TokenService
 from auth.service import (
@@ -42,7 +43,7 @@ class RequestIdentity:
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def get_allowed_origins() -> list[str]:
@@ -84,6 +85,13 @@ def get_authentication_service(
     return AuthenticationService(session, clock=clock)
 
 
+def get_account_administration_service(
+    session: Session = Depends(get_db),
+    clock: Callable[[], datetime] = Depends(get_clock),
+) -> AccountAdministrationService:
+    return AccountAdministrationService(session, clock=clock)
+
+
 def require_allowed_origin(request: Request) -> None:
     origin = request.headers.get("origin")
     if origin is None or origin.rstrip("/") not in get_allowed_origins():
@@ -99,7 +107,9 @@ def _cookie_max_age(issued: IssuedLogin) -> int | None:
     return max(
         0,
         int(
-            (issued.auth_session.expires_at - issued.auth_session.created_at).total_seconds()
+            (
+                issued.auth_session.expires_at - issued.auth_session.created_at
+            ).total_seconds()
         ),
     )
 
@@ -230,6 +240,17 @@ def require_csrf(
 
 def require_admin(
     identity: RequestIdentity = Depends(require_current_user),
+) -> RequestIdentity:
+    if identity.context.account.role != Role.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다.",
+        )
+    return identity
+
+
+def require_admin_csrf(
+    identity: RequestIdentity = Depends(require_csrf),
 ) -> RequestIdentity:
     if identity.context.account.role != Role.ADMIN.value:
         raise HTTPException(

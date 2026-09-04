@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import delete, or_, select, text, update
 from sqlalchemy.orm import Session, joinedload
 
 from auth.models import AuditEvent, AuthSession, UserAccount
@@ -30,9 +30,45 @@ class AuthRepository:
 
     def get_account_for_update(self, user_id: UUID) -> UserAccount | None:
         return self.session.scalar(
+            select(UserAccount).where(UserAccount.id == user_id).with_for_update()
+        )
+
+    def get_participant_for_update(self, user_id: UUID) -> UserAccount | None:
+        return self.session.scalar(
             select(UserAccount)
-            .where(UserAccount.id == user_id)
+            .where(
+                UserAccount.id == user_id,
+                UserAccount.role == "participant",
+            )
             .with_for_update()
+        )
+
+    def add_account(self, account: UserAccount) -> UserAccount:
+        self.session.add(account)
+        self.session.flush()
+        return account
+
+    def list_participants(self) -> list[UserAccount]:
+        return list(
+            self.session.scalars(
+                select(UserAccount)
+                .where(UserAccount.role == "participant")
+                .order_by(UserAccount.participant_code, UserAccount.id)
+            )
+        )
+
+    def lock_admin_bootstrap(self) -> None:
+        self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_name))"),
+            {"lock_name": "dabom.bootstrap_admin"},
+        )
+
+    def has_admin(self) -> bool:
+        return (
+            self.session.scalar(
+                select(UserAccount.id).where(UserAccount.role == "admin").limit(1)
+            )
+            is not None
         )
 
     def revoke_all_sessions(self, user_id: UUID, now: datetime) -> int:

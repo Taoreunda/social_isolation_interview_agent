@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
@@ -20,8 +18,8 @@ class Base(DeclarativeBase):
     """Declarative base shared by all PostgreSQL models."""
 
 
-_engine: Optional[Engine] = None
-_session_factory: Optional[sessionmaker[Session]] = None
+_engine: Engine | None = None
+_session_factory: sessionmaker[Session] | None = None
 
 
 def get_database_url() -> str:
@@ -40,7 +38,9 @@ def get_database_url() -> str:
     if url.drivername == "postgresql":
         url = url.set(drivername="postgresql+psycopg")
     if url.drivername != "postgresql+psycopg":
-        raise DatabaseConfigurationError("DATABASE_URL must use PostgreSQL with psycopg 3")
+        raise DatabaseConfigurationError(
+            "DATABASE_URL must use PostgreSQL with psycopg 3"
+        )
     return url.render_as_string(hide_password=False)
 
 
