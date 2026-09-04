@@ -29,7 +29,9 @@ def test_database_url_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
         get_database_url()
 
 
-def test_non_postgresql_database_url_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_non_postgresql_database_url_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app_core.database import (
         DatabaseConfigurationError,
         get_database_url,

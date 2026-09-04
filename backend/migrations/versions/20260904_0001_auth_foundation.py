@@ -22,27 +22,59 @@ def upgrade() -> None:
         sa.Column("display_username", sa.String(length=64), nullable=False),
         sa.Column("password_hash", sa.Text(), nullable=False),
         sa.Column("role", sa.String(length=16), nullable=False),
-        sa.Column("status", sa.String(length=20), server_default="active", nullable=False),
+        sa.Column(
+            "status", sa.String(length=20), server_default="active", nullable=False
+        ),
         sa.Column("participant_code", sa.String(length=64), nullable=True),
-        sa.Column("failed_login_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
-        sa.Column("failure_window_started_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "failed_login_count",
+            sa.Integer(),
+            server_default=sa.text("0"),
+            nullable=False,
+        ),
+        sa.Column(
+            "failure_window_started_at", sa.DateTime(timezone=True), nullable=True
+        ),
         sa.Column("temporary_locked_until", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("lock_stage", sa.SmallInteger(), server_default=sa.text("0"), nullable=False),
+        sa.Column(
+            "lock_stage", sa.SmallInteger(), server_default=sa.text("0"), nullable=False
+        ),
         sa.Column("admin_locked_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("last_unlocked_by_user_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column(
+            "last_unlocked_by_user_id", postgresql.UUID(as_uuid=True), nullable=True
+        ),
         sa.Column("last_unlocked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_by_user_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("password_changed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("failed_login_count >= 0", name="ck_user_accounts_failed_login_count"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "password_changed_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "failed_login_count >= 0", name="ck_user_accounts_failed_login_count"
+        ),
         sa.CheckConstraint("lock_stage IN (0, 1)", name="ck_user_accounts_lock_stage"),
         sa.CheckConstraint(
             "((role = 'participant' AND participant_code IS NOT NULL) "
             "OR (role = 'admin' AND participant_code IS NULL))",
             name="ck_user_accounts_participant_code_role",
         ),
-        sa.CheckConstraint("role IN ('participant', 'admin')", name="ck_user_accounts_role"),
+        sa.CheckConstraint(
+            "role IN ('participant', 'admin')", name="ck_user_accounts_role"
+        ),
         sa.CheckConstraint(
             "status IN ('active', 'disabled', 'admin_locked')",
             name="ck_user_accounts_status",

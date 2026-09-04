@@ -5,10 +5,9 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import create_engine, pool
-
 from app_core.database import Base, get_database_url
 from auth import models  # noqa: F401  (register mappings with Base.metadata)
+from sqlalchemy import create_engine, pool
 
 config = context.config
 if config.config_file_name is not None:
