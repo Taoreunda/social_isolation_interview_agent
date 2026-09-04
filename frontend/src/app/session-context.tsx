@@ -74,6 +74,7 @@ function withSessionErrors(api: AppApi, authorizedRequest: AuthorizedRequest): A
       () => api.resetParticipantPassword(participantId),
     ),
     disableParticipant: (participantId) => authorizedRequest(() => api.disableParticipant(participantId)),
+    unlockParticipant: (participantId) => authorizedRequest(() => api.unlockParticipant(participantId)),
     listInterviews: () => authorizedRequest(() => api.listInterviews()),
     getInterview: (interviewId) => authorizedRequest(() => api.getInterview(interviewId)),
     reviewScorecard: (input) => authorizedRequest(() => api.reviewScorecard(input)),

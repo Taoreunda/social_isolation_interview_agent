@@ -1,11 +1,11 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import { ApiProvider } from '@/app/api-context'
+import { createDefaultApi } from '@/app/default-api'
 import { RequireGuest, RequireRole } from '@/app/route-guards'
 import { SessionProvider, useSession } from '@/app/session-context'
 import { AdminLayout } from '@/layouts/AdminLayout'
 import { ParticipantLayout } from '@/layouts/ParticipantLayout'
-import { MockAppApi } from '@/mocks/mock-api'
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage'
 import { InterviewPage } from '@/pages/InterviewPage'
 import { InterviewReviewPage } from '@/pages/InterviewReviewPage'
@@ -13,7 +13,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import { ParticipantsPage } from '@/pages/ParticipantsPage'
 import { PasswordPage } from '@/pages/PasswordPage'
 
-const defaultApi = new MockAppApi()
+const defaultApi = createDefaultApi()
 
 function DefaultRoute() {
   const { user } = useSession()

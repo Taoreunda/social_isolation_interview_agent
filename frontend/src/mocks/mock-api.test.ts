@@ -310,6 +310,19 @@ describe('MockAppApi', () => {
     await expect(api.login(participantLogin)).rejects.toMatchObject({ status: 401 })
   })
 
+  it('unlocks an administrator-locked participant account', async () => {
+    const seed = createMockFixtureState()
+    seed.accounts[0].status = 'admin_locked'
+    const api = new MockAppApi(seed)
+    await api.login(adminLogin)
+
+    const unlocked = await api.unlockParticipant(seed.accounts[0].id)
+
+    expect(unlocked.status).toBe('active')
+    await api.logout()
+    await expect(api.login(participantLogin)).resolves.toMatchObject({ role: 'participant' })
+  })
+
   it('rejects participant access to administrator methods', async () => {
     const api = new MockAppApi()
     await api.login(participantLogin)

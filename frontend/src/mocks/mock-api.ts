@@ -147,6 +147,16 @@ export class MockAppApi implements AppApi {
     return this.toParticipantRecord(account)
   }
 
+  async unlockParticipant(participantId: string): Promise<ParticipantRecord> {
+    this.requireAdmin()
+    const account = this.findParticipant(participantId)
+    if (account.status !== 'admin_locked') {
+      throw new ApiError(409, 'Account is not administrator locked')
+    }
+    account.status = 'active'
+    return this.toParticipantRecord(account)
+  }
+
   async listInterviews(): Promise<InterviewListItem[]> {
     this.requireAdmin()
     return this.state.interviews.map(({ messages: _messages, scorecard: _scorecard, participantId: _participantId, ...item }) =>

@@ -451,16 +451,22 @@ describe('complete application route tree', () => {
     expect(screen.getByTestId('location-path')).toHaveTextContent('/login')
   })
 
-  it('uses the browser route composition without requesting the legacy backend', async () => {
+  it('restores the browser session from auth without requesting a legacy interview endpoint', async () => {
     window.history.replaceState({}, '', '/not-a-route')
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 401 }),
+    )
 
     try {
       render(<StrictMode><App /></StrictMode>)
 
       expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
       expect(window.location.pathname).toBe('/login')
-      expect(fetchSpy).not.toHaveBeenCalled()
+      expect(fetchSpy.mock.calls.length).toBeGreaterThan(0)
+      for (const [url, init] of fetchSpy.mock.calls) {
+        expect(url).toBe('/api/auth/me')
+        expect(init).toMatchObject({ credentials: 'include', method: 'GET' })
+      }
     } finally {
       fetchSpy.mockRestore()
     }

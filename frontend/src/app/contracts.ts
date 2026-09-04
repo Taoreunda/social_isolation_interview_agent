@@ -1,5 +1,5 @@
 export type Role = 'participant' | 'admin'
-export type AccountStatus = 'active' | 'disabled'
+export type AccountStatus = 'active' | 'disabled' | 'admin_locked'
 export type InterviewStatus = 'active' | 'completed' | 'archived'
 
 export interface CurrentUser {
@@ -93,6 +93,7 @@ export interface AppApi {
   createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord>
   resetParticipantPassword(participantId: string): Promise<PasswordResult>
   disableParticipant(participantId: string): Promise<ParticipantRecord>
+  unlockParticipant(participantId: string): Promise<ParticipantRecord>
   listInterviews(): Promise<InterviewListItem[]>
   getInterview(interviewId: string): Promise<InterviewDetail>
   reviewScorecard(input: ReviewScorecardInput): Promise<InterviewDetail>

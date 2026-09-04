@@ -39,6 +39,7 @@ function createApi(overrides: Partial<AppApi> = {}): AppApi {
     createParticipant: vi.fn(),
     resetParticipantPassword: vi.fn(),
     disableParticipant: vi.fn(),
+    unlockParticipant: vi.fn(),
     listInterviews: vi.fn(),
     getInterview: vi.fn(),
     reviewScorecard: vi.fn(),

@@ -44,6 +44,7 @@ function createApi(overrides: Partial<AppApi> = {}): AppApi {
     login: vi.fn(), logout: vi.fn(), getCurrentUser: vi.fn(), changePassword: vi.fn(),
     getCurrentInterview: vi.fn(), sendMessage: vi.fn(), listParticipants: vi.fn(),
     createParticipant: vi.fn(), resetParticipantPassword: vi.fn(), disableParticipant: vi.fn(),
+    unlockParticipant: vi.fn(),
     listInterviews: vi.fn().mockResolvedValue(clone(queue)),
     getInterview: vi.fn().mockResolvedValue(clone(detail)),
     reviewScorecard: vi.fn().mockResolvedValue(clone({
