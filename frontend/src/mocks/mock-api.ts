@@ -175,15 +175,21 @@ export class MockAppApi implements AppApi {
     const interview = this.findInterview(input.interviewId)
     const row = interview.scorecard.find((candidate) => candidate.questionId === input.questionId)
     if (!row) throw new ApiError(404, 'Scorecard row not found')
+    if (row.aiStatus === null) throw new ApiError(400, 'AI decision is required for review')
 
     if (input.action === 'override') {
+      if (row.aiStatus === 'recorded') {
+        throw new ApiError(400, 'Recorded items can only be approved')
+      }
       if (!input.expertStatus || !input.rationale) {
         throw new ApiError(400, 'Override needs an expert status and rationale')
+      }
+      if (input.expertStatus === row.aiStatus) {
+        throw new ApiError(400, 'Override must change the AI decision')
       }
       row.expertStatus = input.expertStatus
       row.expertRationale = input.rationale
     } else {
-      if (row.aiStatus === null) throw new ApiError(400, 'AI decision is required for approval')
       row.expertStatus = row.aiStatus
       row.expertRationale = input.rationale ?? null
     }
@@ -304,9 +310,10 @@ export class MockAppApi implements AppApi {
   }
 
   private reviewStatus(interview: MockInterviewFixture): InterviewListItem['reviewStatus'] {
-    const reviewedRows = interview.scorecard.filter((row) => row.expertStatus !== null).length
+    const reviewableRows = interview.scorecard.filter((row) => row.aiStatus !== null)
+    const reviewedRows = reviewableRows.filter((row) => row.expertStatus !== null).length
     if (reviewedRows === 0) return 'unreviewed'
-    return reviewedRows === interview.scorecard.length ? 'reviewed' : 'in_review'
+    return reviewedRows === reviewableRows.length ? 'reviewed' : 'in_review'
   }
 
   private turnKey(interviewId: string, clientTurnId: string): string {

@@ -1,264 +1,103 @@
-# 연구 플랫폼 목표 아키텍처
+# Dabom 아키텍처
 
-이 문서는 Dabom의 유지되는 목표 아키텍처입니다. 현재 구현과 목표 상태를 구분하며, 세부 구현과 데이터베이스 migration이 최종 동작의 기준입니다.
-
-## 현재 구현 상태
-
-| 영역 | 현재 | 목표 |
-| --- | --- | --- |
-| 프론트엔드 | 역할이 분리된 React/shadcn UI, 인증·계정 API 연결 | 보호된 인터뷰 API까지 연결 |
-| 인증 | PostgreSQL 서버 세션과 계정 관리 API를 React에 연결 | 완료 |
-| 인터뷰 백엔드 | 인증 없는 FastAPI/LangGraph 프로토타입 | 역할·소유권이 적용된 동일 FastAPI 서비스 |
-| 영속성 | 인증은 PostgreSQL, 인터뷰는 프로세스 메모리와 gitignored JSON | 전체 PostgreSQL 16, AWS에서는 RDS for PostgreSQL |
-| 배포 | 로컬 PostgreSQL Compose와 호스트 애플리케이션 | 작은 EC2 애플리케이션 호스트 + private Single-AZ RDS |
-
-React는 기본적으로 라이브 HTTP adapter를 사용합니다. `/api/auth/*`와 `/api/admin/participants*`에는 PostgreSQL 저장, 제한된 CORS, cookie 세션, CSRF와 역할 검사가 구현되어 있으며 로그인·비밀번호 변경·참여자 관리 화면에 연결되어 있습니다. 반면 기존 인터뷰 endpoint에는 세션·역할·소유권 검사가 없고 PostgreSQL에 저장되지 않습니다. 라이브 adapter는 이 경로를 호출하지 않고 연결 전 상태를 표시합니다. 인터뷰 경계 전환이 끝나기 전에는 실제 연구 데이터를 입력하지 않습니다.
-
-## 결정된 범위
-
-- 약 200–300명의 폐쇄형 참여자와 소수의 연구 관리자를 지원합니다.
-- 역할은 `participant`와 `admin` 두 개뿐입니다.
-- 공개 가입, 소셜 로그인, 이메일 인증, 비밀번호 복구 메일은 만들지 않습니다.
-- 최초 로그인 시 비밀번호 변경을 강제하지 않습니다.
-- 한 연구만 지원하며 조직·tenant 분리는 도입하지 않습니다.
-- PostgreSQL 기능만 사용하고 SQLite나 JSON fallback을 두지 않습니다.
-- 초기 배포는 단일 FastAPI 프로세스와 Single-AZ RDS로 시작합니다. 수평 확장, Redis, RDS Proxy, read replica와 Multi-AZ는 부하 및 운영 요구가 생길 때 검토합니다.
-
-## 실행 구조
+## 구성
 
 ```text
 Browser
   -> HTTPS reverse proxy
     -> React static assets
-    -> FastAPI REST/SSE API
-      -> PostgreSQL
+    -> FastAPI
+      -> PostgreSQL 16
       -> configured LLM provider
 ```
 
-로컬과 AWS는 같은 PostgreSQL major version과 migration을 사용합니다.
+로컬은 Docker Compose PostgreSQL과 호스트 FastAPI/Vite를 사용합니다. AWS는 작은 단일 EC2 애플리케이션과 EC2에서만 접근 가능한 private RDS for PostgreSQL을 기본 구성으로 합니다. 로컬과 AWS는 같은 Alembic migration을 사용하며 애플리케이션 시작 전에 명시적으로 적용합니다.
 
-- 로컬: `dev.sh`가 준비하는 컨테이너 PostgreSQL 16과 호스트의 FastAPI·Vite
-- AWS: 정적 React build와 FastAPI를 실행하는 작은 EC2, EC2 보안 그룹에서만 접근 가능한 private RDS
-- `DATABASE_URL`로 연결 대상을 선택하고 AWS 연결은 TLS 인증서를 검증합니다.
-- migration은 Alembic으로 명시적으로 실행하며 애플리케이션 시작 시 자동 적용하지 않습니다.
-- 데이터베이스 연결 실패는 readiness 실패로 처리하고 다른 저장 방식으로 전환하지 않습니다.
-
-AWS 인스턴스 크기는 동시 사용자 부하 시험 뒤 확정합니다. 초기 구성에는 RDS 암호화, 자동 backup, 삭제 방지, private subnet과 최소 권한 security group을 적용합니다. 데이터베이스 자격 증명은 Secrets Manager 또는 Parameter Store에서 제공합니다.
-
-## 역할과 데이터 경계
+## 역할과 접근 범위
 
 ### 참여자
 
-- 로그인, 자동 로그인, 현재 인터뷰 시작·재개, 선택적 비밀번호 변경
-- 자신의 활성 인터뷰와 공개된 대화 메시지만 접근
-- 진단, 점수표, AI 판단, 연구자 근거, 다른 참여자 및 export에는 접근 불가
+- 로그인, 자동 로그인, 선택적 비밀번호 변경
+- 본인의 현재 인터뷰 시작·재개와 공개 대화 조회
+- 다른 참여자, 참여자 코드, 점수표, 진단, AI 근거, 전문가 검토와 CSV에는 접근 불가
 
 ### 관리자
 
-- 참여자 계정 생성·비활성화·비밀번호 재설정·관리자 잠금 해제
-- 인터뷰 목록·상세 조회, 점수표 동의·변경, CSV export
-- 실명 대신 가명 `participant_code` 사용
+- 가명 참여자 계정 생성, 비밀번호 재설정, 비활성화, 관리자 잠금 해제
+- 인터뷰 목록·상세, 점수표 동의/변경과 CSV export
+- 실명 대신 `participant_code` 사용
 
-브라우저 route guard는 탐색 편의 기능입니다. FastAPI가 모든 요청에서 세션, 역할과 resource 소유권을 다시 검사합니다. 보이지 않는 resource는 필요에 따라 `404`로 응답해 존재 여부를 노출하지 않습니다.
-
-참여자는 하나의 활성 인터뷰만 가질 수 있습니다. 과거 시도는 보관할 수 있지만, 활성 인터뷰의 archive와 교체는 관리자만 수행합니다. 참여자는 수집된 연구 데이터를 삭제하거나 초기화할 수 없습니다.
+FastAPI가 각 요청에서 세션, 역할과 resource 소유권을 검사합니다. 참여자가 소유하지 않은 인터뷰는 `404`로 처리합니다. 상태 변경은 허용 origin과 double-submit CSRF cookie/header까지 검증합니다.
 
 ## 인증과 세션
 
-- 사용자 이름은 trim·정규화 후 3–64자의 소문자 ASCII `a-z`, 숫자, `.`, `_`, `-`만 허용합니다.
-- 비밀번호는 10–128자이며 Argon2id로 hash합니다.
-- 관리자는 계정 생성·재설정 시 비밀번호를 직접 입력하거나 기본 20자의 안전한 값을 생성할 수 있습니다.
-- 생성된 평문 비밀번호만 해당 응답에서 한 번 반환하며 저장하거나 로그로 남기지 않습니다. 직접 입력한 비밀번호는 응답에 반환하지 않습니다.
-- 첫 관리자는 로컬 shell 또는 AWS Systems Manager에서 실행하는 대화형 관리 명령으로 생성합니다.
-- 로그인 실패 메시지는 사용자 이름의 존재 여부를 구분하지 않습니다.
+사용자 이름은 정규화된 3–64자 ASCII이며 비밀번호는 10–128자입니다. 비밀번호는 Argon2id, 브라우저 세션은 암호학적으로 안전한 opaque token을 사용합니다. 브라우저에는 `HttpOnly`, `SameSite=Lax` session cookie를 두고 PostgreSQL에는 token hash만 저장합니다. HTTPS에서는 `Secure`를 적용합니다.
 
-로그인 실패는 두 단계로 처리합니다.
+- 일반 세션: 생성 시점부터 고정 24시간
+- 자동 로그인: 마지막 유효 활동 기준 30일 rolling 만료
+- 자동 로그인 갱신: 만료 7일 이하일 때 현재 시점부터 30일로 연장
+- 절대 상한: 최초 인증부터 90일
+- `last_seen_at`: 쓰기를 15분 간격으로 제한
+- 비밀번호 변경·재설정·비활성화·관리자 잠금/해제: 대상 계정의 모든 세션 폐기
 
-1. 15분 안에 다섯 번 실패하면 15분 동안 임시 잠급니다.
-2. 임시 잠금 중 발생한 요청은 다음 단계의 실패 횟수에 포함하지 않습니다.
-3. 임시 잠금이 끝난 뒤 다시 15분 안에 다섯 번 실패하면 `admin_locked` 상태로 전환합니다.
-4. `admin_locked` 계정은 관리자만 해제할 수 있습니다. 해제는 실패 횟수와 잠금 단계를 초기화하고 기존 세션을 복구하지 않습니다.
-5. 임시 잠금 이후 정상 로그인에 성공하면 실패 횟수와 잠금 단계를 초기화합니다.
-6. 관리자 잠금과 해제는 모든 기존 세션을 폐기하고 audit event를 기록합니다.
-
-로그인 성공 시 암호학적으로 안전한 opaque token을 생성합니다. 브라우저에는 `HttpOnly`, `SameSite=Lax` cookie만 전달하고 production에서는 `Secure`를 추가합니다. PostgreSQL에는 token hash만 저장합니다.
-
-- 일반 세션: 생성 시점부터 24시간의 고정 만료. 활동으로 연장하지 않음
-- 자동 로그인 세션: 마지막 유효 활동을 기준으로 30일의 rolling 만료
-- 자동 로그인 갱신: 만료까지 7일 이하로 남았을 때 인증된 요청이 성공하면 만료를 현재 시점부터 30일로 연장
-- 자동 로그인 절대 상한: 최초 인증 시점부터 90일. 상한에 도달하면 다시 로그인해야 함
-- 새로 로그인하면 기존 세션을 연장하지 않고 새로운 만료 기준의 세션을 생성
-- 로그아웃: 현재 세션 폐기
-- 비밀번호 변경·관리자 재설정·계정 비활성화·관리자 잠금: 해당 계정의 모든 세션 폐기
-- 만료·폐기 세션: 주기적인 정리 명령으로 삭제
-
-`last_seen_at` 갱신은 요청마다 쓰지 않고 15분 간격으로 제한합니다. rolling 연장 여부는 서버가 계산하며 client cookie만으로 만료를 늘릴 수 없습니다.
-
-상태 변경 요청은 허용된 origin과 double-submit CSRF token의 cookie·header·데이터베이스 hash를 검증합니다. CORS는 개발·production 각각의 애플리케이션 origin으로 제한합니다.
+로그인 실패는 두 단계입니다. 15분 안에 다섯 번 실패하면 15분 임시 잠금, 임시 잠금 종료 후 다시 15분 안에 다섯 번 실패하면 `admin_locked`가 됩니다. 임시 잠금 중 요청은 다음 단계 횟수에 포함하지 않습니다. 성공 로그인과 관리자 해제는 실패 단계를 초기화합니다.
 
 ## PostgreSQL 모델
 
-식별자는 UUID, 시각은 UTC timezone-aware timestamp를 사용합니다. 상태 값에는 데이터베이스 constraint를 둡니다.
+Migration `20260904_0001`:
 
-현재 migration `20260904_0001`에는 다음 세 테이블이 구현되어 있습니다.
+- `user_accounts`: 역할·상태·가명 코드, password hash, 로그인 실패/잠금 상태
+- `auth_sessions`: token/CSRF hash, 일반·자동 세션 만료와 폐기 상태
+- `audit_events`: 계정·검토·export 동작의 최소 metadata
 
-### `user_accounts`
+Migration `20260905_0002`:
 
-- 정규화·표시 사용자 이름, password hash, `participant|admin` 역할, `active|disabled|admin_locked` 상태
-- 참여자에게만 존재하는 unique `participant_code`
-- 실패 window 시작 시각과 횟수, `temporary_locked_until`, 잠금 단계
-- `admin_locked_at`, 잠금·해제 관리자와 해제 시각
-- 생성자와 생성·수정·비밀번호 변경 시각
+- `interviews`: 참여자, `active|completed|archived`, 진행률, 기준 결과, 진단·보고서, 알고리즘 버전과 시각
+- `interview_messages`: 증가 순서, `user|assistant`, 공개 내용, `client_turn_id`
+- `scorecard_items`: 문항 순서·텍스트, AI 상태·값·근거, clarification 횟수와 평가 시각
+- `expert_reviews`: 문항별 최신 연구자 동의/변경 결과
 
-### `auth_sessions`
+UUID와 UTC timezone-aware timestamp를 사용합니다. partial unique index가 참여자당 활성 인터뷰 하나를 보장하고, `(interview_id, client_turn_id, role)`이 turn 재전송의 중복 메시지를 막습니다. 상태·진행률·문항 상태는 database check constraint로 제한합니다.
 
-- 사용자, token hash, CSRF token hash, session 종류, 생성·최근 사용·rolling 만료·절대 만료·폐기 시각
+## 인터뷰 turn
 
-### `audit_events`
+1. 참여자 세션과 인터뷰 소유권을 확인합니다.
+2. 같은 인터뷰의 겹치는 turn은 단일 프로세스 application lock으로 `409` 처리합니다.
+3. PostgreSQL의 공개 메시지와 점수표를 읽어 기존 `InterviewEngine` 입력을 재구성합니다.
+4. 열린 DB transaction 없이 LangGraph/LLM을 실행합니다.
+5. 성공 시 user 메시지, assistant 메시지, 점수표와 인터뷰 상태를 한 transaction으로 커밋합니다.
+6. 커밋된 `client_turn_id` 재전송은 모델을 다시 호출하지 않고 저장 결과를 반환합니다.
 
-- actor, action, target 종류·ID, 시각과 최소 metadata
-- 계정 생성·비활성화·재설정·잠금·해제 기록
-- 비밀번호와 session·CSRF token 원문은 기록하지 않음
+LLM 실패는 이전 커밋을 보존합니다. 서버 재시작 후에도 마지막 turn 경계부터 복원합니다. system prompt, tool call/message와 provider 객체는 저장하지 않습니다. 초기 인터뷰 생성은 process lock과 PostgreSQL advisory lock으로 직렬화됩니다.
 
-아래 인터뷰 관련 테이블은 아직 목표 모델이며 migration에 포함되지 않았습니다.
-
-### `interviews`
-
-- 참여자, `active|completed|archived` 상태와 주요 시각
-- 진단·보고서·알고리즘 버전
-- 참여자당 활성 인터뷰 하나를 보장하는 unique rule
-
-### `interview_messages`
-
-- 인터뷰별 증가하는 순서, `user|assistant` 역할, 내용과 생성 시각
-- 한 요청에서 생성된 메시지가 공유하는 `client_turn_id`
-- `(interview_id, client_turn_id, role)` unique key
-
-화면에 보이는 사용자·assistant 메시지만 연구 기록으로 저장합니다. system prompt, tool payload와 provider 전용 객체는 대화 기록으로 저장하지 않습니다.
-
-### `scorecard_items`
-
-- 인터뷰·문항 unique key
-- AI 상태, 추출 값, 근거, clarification 횟수와 평가 시각
-
-### `expert_reviews`
-
-- 인터뷰, 문항, 검토자
-- 원래 상태, 전문가 상태, 근거, 동작과 검토 시각
-- 인터뷰·문항당 최신 검토를 식별할 수 있는 constraint
-
-여러 연구를 실제로 운영하기 전에는 `studies` 테이블을 추가하지 않습니다.
-
-## 인터뷰 transaction
-
-각 참여자 turn은 client가 생성한 `client_turn_id`를 포함합니다.
-
-1. 세션과 인터뷰 소유권을 검증합니다.
-2. 동일 인터뷰의 동시 요청을 거부합니다.
-3. 커밋된 메시지와 점수표를 불러와 LangGraph 입력을 재구성합니다.
-4. LLM을 실행하고 임시 assistant token을 SSE로 전달합니다.
-5. 사용자 메시지, 최종 assistant 메시지, 점수표와 인터뷰 metadata를 한 transaction으로 저장합니다.
-6. transaction commit 이후에만 SSE `done`을 보냅니다.
-
-초기 단일 프로세스에서는 인터뷰별 application lock으로 겹치는 turn을 `409` 처리합니다. 다중 프로세스로 확장하기 전에는 database 또는 분산 lock으로 교체해야 합니다.
-
-LLM 실패 시 이전 커밋 상태를 유지합니다. commit 실패 시 UI는 마지막 커밋 상태를 다시 불러옵니다. 이미 커밋된 `client_turn_id`를 재전송하면 메시지를 추가하지 않고 저장된 결과를 반환합니다. 이를 통해 FastAPI 재시작 뒤에도 turn 경계에서 인터뷰를 재개할 수 있습니다. 중단된 LLM 응답의 부분 token 복구는 범위 밖입니다.
+모델이 기존 AI 판단을 바꾸면 해당 문항의 이전 전문가 검토를 무효화합니다. AI 상태가 `null`이면 검토할 수 없고 `recorded` 문항은 동의만 가능하며, 변경은 AI 판정과 다른 값이어야 합니다. 같은 값으로의 변경은 `400`으로 거부하고, 검토 UI는 `recorded` 행의 변경 버튼을 비활성화한 뒤 대화상자에서 유일하게 유효한 반대 판정을 기본 선택합니다. 검토 상태는 AI 판단이 존재하는 행만 대상으로 `unreviewed|in_review|reviewed`를 계산합니다.
 
 ## API 계약
 
-현재 구현된 인증 API는 다음과 같습니다.
+참여자:
 
-- `GET /api/health`: 프로세스 liveness
-- `GET /api/ready`: PostgreSQL readiness
-- `POST /api/auth/login`: 일반 또는 자동 로그인 세션 생성
-- `GET /api/auth/me`: 현재 계정 조회
-- `POST /api/auth/logout`: 현재 세션 폐기
-- `POST /api/auth/password`: 본인 비밀번호 변경과 모든 세션 폐기
-- `GET|POST /api/admin/participants`: 참여자 목록·생성
-- `POST /api/admin/participants/{participant_id}/password`: 비밀번호 재설정
-- `POST /api/admin/participants/{participant_id}/disable`: 계정 비활성화
-- `POST /api/admin/participants/{participant_id}/unlock`: 관리자 잠금 해제
+- `GET /api/interviews/current`
+- `POST /api/interviews`
+- `POST /api/interviews/{interview_id}/messages`
 
-login 외의 인증 endpoint는 유효한 서버 세션을 요구하고, 관리자 endpoint는 역할을 추가로 검사합니다. 상태 변경 endpoint는 허용된 origin과 CSRF 검사를 모두 요구합니다.
+관리자:
 
-기존 `/api/start`, `/api/message`, `/api/stream`, `/api/review`, `/api/sessions`, `/api/csv`는 이전 프로토타입 계약이며 아직 공개 상태입니다. 아래 인터뷰 API 계약으로 교체되기 전에는 보호된 API로 간주하지 않습니다.
+- `GET /api/admin/interviews`
+- `GET /api/admin/interviews/{interview_id}`
+- `POST /api/admin/interviews/{interview_id}/scorecard/{question_id}`
+- `POST /api/admin/interviews/{interview_id}/csv`
 
-- 목표 참여자 API: 현재 인터뷰, 메시지 stream과 최종 커밋 상태
-- 목표 관리자 API: 인터뷰 목록·상세·archive, 점수표 검토, CSV export
+오류 의미는 `401` 인증 실패, `403` 역할·CSRF·origin 실패, `404` 보이지 않거나 없는 resource, `409` 상태/동시성 충돌, `503` DB·모델 dependency 실패입니다. 외부 exception 세부 정보는 응답에 포함하지 않습니다. CSV의 외부 유래 문자열은 spreadsheet formula 실행을 막도록 escape하며 export audit event를 남깁니다.
 
-참여자용 인터뷰 응답에는 진행 상태와 공개 메시지만 포함합니다. `participant_code`, 검토 상태, 점수표, AI 상태와 근거는 관리자 DTO에만 포함합니다.
+React의 `HttpAppApi`가 기본 구현입니다. 현재 인터뷰가 없다는 `404`에만 CSRF 보호된 생성 요청을 이어서 보냅니다. `VITE_APP_MODE=mock`은 격리된 UI 개발과 테스트에만 사용합니다. 옛 무인증 인터뷰 API, `MemorySaver`, JSON 결과 저장과 transcript logger는 애플리케이션에서 제거되었습니다.
 
-오류 의미는 다음과 같이 고정합니다.
+## 운영 경계
 
-- `401`: 인증 없음·만료·폐기. 프론트엔드 세션을 지우고 로그인으로 이동
-- `403`: 유효한 사용자지만 권한 없음. 세션은 유지하고 권한 전용 상태 표시
-- `404`: 호출자에게 보이지 않는 resource
-- `409`: 활성 인터뷰 또는 동시 turn 충돌
-- `503`: PostgreSQL 등 필수 dependency 사용 불가
+- 초기 규모: 폐쇄형 참여자 약 200–300명, 소수 관리자, 한 연구
+- 초기 runtime: 단일 FastAPI 프로세스; 여러 worker 전에 turn lock을 DB/분산 방식으로 교체
+- 응답 방식: turn 완료 후 JSON; 부분 token streaming과 중단된 생성 복구는 미지원
+- 데이터베이스: PostgreSQL만 지원; SQLite/JSON fallback 없음
+- 계정: 공개 가입, 소셜 로그인, 이메일 인증/복구 없음
+- 연구 관리: 인터뷰 archive 전환 UI/API는 아직 없음
 
-SSE 오류는 안정적인 machine-readable code와 안전한 한국어 메시지를 사용합니다. 원본 exception과 database 세부 정보는 client에 반환하지 않습니다.
-
-AI 상태가 `null`인 점수표 행은 검토할 수 없으며 동의와 변경을 모두 거부합니다. 인터뷰 검토 상태는 AI 상태가 non-null인 행만 대상으로 계산합니다.
-
-- 검토된 행 없음: `unreviewed`
-- 일부만 검토: `in_review`
-- 모든 검토 가능 행 완료: `reviewed`
-
-CSV export는 참여자 코드를 사용하고 audit event를 남깁니다. spreadsheet formula injection을 막도록 외부 유래 cell을 escape합니다.
-
-## 프론트엔드 계약
-
-유지하는 경로는 다음과 같습니다.
-
-- `/login`
-- `/interview`
-- `/account/password`
-- `/admin`
-- `/admin/participants`
-- `/admin/interviews/:interviewId`
-
-역할 전환 UI는 두지 않습니다. 참여자 shell은 인터뷰와 계정 동작만, 관리자 shell은 참여자 관리와 인터뷰 검토만 제공합니다. UI 원칙과 세 가지 기본 색상은 [PRODUCT.md](../PRODUCT.md)를 따릅니다.
-
-`HttpAppApi`가 기본 runtime이며 cookie 요청에는 `credentials: include`를 사용합니다. 상태 변경 요청은 CSRF cookie를 `X-CSRF-Token` header로 전달합니다. `401`은 client identity를 지우고 로그인으로 이동하며 `403`은 현재 identity를 유지합니다. 비밀번호 변경이 성공하면 모든 서버 세션과 client identity를 폐기하고 로그인 화면으로 돌아갑니다.
-
-목 데이터는 `frontend/src/mocks/` 안에만 존재하며 `VITE_APP_MODE=mock`을 명시한 격리된 UI 개발과 테스트에만 사용합니다. 별도의 browser session persistence를 추가하지 않습니다. 보호된 인터뷰 API가 구현될 때까지 라이브 interview method는 네트워크 요청 전에 `501` 상태를 반환하며 이전 공개 endpoint를 우회 호출하지 않습니다.
-
-인터뷰 API 연결 때 남은 계약 차이를 함께 제거합니다.
-
-- 모든 보호 작업의 `403`을 권한 전용 상태로 표시합니다.
-- AI 상태가 null인 행의 검토와 review-status 계산을 목표 계약에 맞춥니다.
-
-## 개인정보와 운영
-
-- 현재 로컬 프로세스 로그는 `logs/api.log`, `logs/frontend.log`, `logs/dev.log`로 분리하고 `dev.sh`에서 함께 조회합니다. 이는 개발 편의를 위한 단일 진입점이며 중앙 로그 서비스는 아닙니다.
-- 계정 생성·변경·잠금·해제 감사 기록은 PostgreSQL `audit_events`에 보존합니다.
-- 기존 `logs/interview_*.json`은 메시지와 모델 처리 내용을 포함할 수 있는 레거시 기록이므로 통합 조회에서 제외하고, 인터뷰 PostgreSQL 전환 때 활성 경로에서 제거합니다.
-- AWS 배포에서는 FastAPI의 구조화된 표준 출력·오류를 CloudWatch Logs로 수집하도록 구성합니다. 운영 로그에는 request ID와 최소 metadata만 남기고 메시지, 판단 근거, 비밀번호, token과 진단을 기록하지 않습니다.
-- LangSmith 추적은 기본으로 끕니다. 실제 참여자 데이터 추적은 별도의 연구 데이터 승인 뒤에만 사용합니다.
-- raw database와 backup 접근은 배포 환경의 연구 관리자에게만 허용합니다.
-- backup 보존 기간과 최종 삭제는 승인된 연구 protocol을 따릅니다.
-- production Vite 개발 서버와 public PostgreSQL port를 허용하지 않습니다.
-
-## 다음 구현 순서
-
-1. **완료:** PostgreSQL 설정, 로컬 Compose, 인증 모델·repository와 Alembic migration.
-2. **완료:** 비밀번호·rolling 세션 service, 2단계 로그인 잠금, 관리자 잠금 해제, 최초 관리자 명령, login/logout, CSRF와 역할 dependency.
-3. **완료:** React `AppApi`를 인증·계정 endpoint에 연결하고 mock을 명시적 개발·테스트 모드로 제한합니다.
-4. 인터뷰, 메시지, 점수표, 검토와 export를 PostgreSQL repository와 보호된 API로 옮겨 React에 연결합니다.
-5. 기존 `_sessions`, `MemorySaver` checkpoint 의존, JSON storage와 transcript logging을 활성 경로에서 제거합니다.
-6. 로컬 복구·동시성 검증 뒤 EC2/RDS 배포 설정을 추가합니다.
-
-## 연구 사용 전 통과 조건
-
-- **인증 범위 완료:** 빈 PostgreSQL에 migration을 적용하고 첫 관리자를 생성할 수 있습니다.
-- **인증 범위 완료:** 24시간 일반 세션, 30일 rolling·90일 상한 자동 로그인, 갱신 임계점과 만료 테스트가 통과합니다.
-- **인증 범위 완료:** 첫 5회 실패의 임시 잠금, 다음 5회의 관리자 잠금, 성공 초기화, 관리자 해제와 세션 폐기 테스트가 통과합니다.
-- **인증 범위 완료:** 로그인·로그아웃·CSRF, generic 로그인 오류와 참여자 관리 역할 검사가 통과합니다.
-- **인증 범위 완료:** React 로그인·세션 복원·비밀번호 변경과 참여자 관리가 라이브 인증 API를 사용하며 공개 인터뷰 endpoint를 호출하지 않습니다.
-- **남음:** 참여자와 관리자가 상대 역할의 인터뷰 route와 데이터에 접근할 수 없습니다.
-- 중복 turn, LLM 실패, database 실패와 FastAPI 재시작 뒤 마지막 커밋 상태가 유지됩니다.
-- 활성 endpoint가 `_sessions`, `MemorySaver` 또는 JSON 결과 파일을 읽거나 쓰지 않습니다.
-- frontend route·상태 테스트와 desktop/360px 브라우저 smoke test가 통과합니다.
-- 실제 export 전에 CSV formula-injection 테스트가 통과합니다.
-- backup 복원 연습과 예상 동시 사용자 부하 시험을 완료합니다.
-- 같은 migration과 애플리케이션 build가 로컬 PostgreSQL과 RDS에서 동작합니다.
+AWS에서는 RDS 암호화, 자동 backup, 삭제 방지, private subnet, 최소 권한 security group, Secrets Manager/Parameter Store와 검증된 TLS를 사용합니다. FastAPI 구조화 로그는 CloudWatch Logs로 수집하되 메시지, 진단, 판단 근거, 비밀번호와 token을 기록하지 않습니다. LangSmith는 기본 비활성화하며 실제 연구 데이터 추적은 별도 승인 뒤에만 사용합니다.

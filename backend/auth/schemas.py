@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -58,6 +59,9 @@ class ParticipantResponse(ApiSchema):
     username: str
     participant_code: str
     status: AccountStatus
+    interview_status: Literal[
+        "not_started", "active", "completed", "archived"
+    ] = "not_started"
 
 
 class ParticipantCredentialResponse(ApiSchema):

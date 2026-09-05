@@ -137,6 +137,7 @@ describe('HttpAppApi participant administration', () => {
         username: 'participant01',
         participantCode: 'P-001',
         status: 'admin_locked',
+        interviewStatus: 'active',
       },
     ]), { status: 200 }))
     const api = new HttpAppApi(fetcher)
@@ -147,7 +148,7 @@ describe('HttpAppApi participant administration', () => {
         username: 'participant01',
         participantCode: 'P-001',
         status: 'admin_locked',
-        interviewStatus: 'not_started',
+        interviewStatus: 'active',
       },
     ])
     expect(fetcher).toHaveBeenCalledWith('/api/admin/participants', expect.objectContaining({
@@ -164,6 +165,7 @@ describe('HttpAppApi participant administration', () => {
         username: 'participant02',
         participantCode: 'P-002',
         status: 'active',
+        interviewStatus: 'not_started',
       },
       assignedPassword: null,
     }), { status: 201 }))
@@ -215,12 +217,14 @@ describe('HttpAppApi participant administration', () => {
       username: 'participant01',
       participantCode: 'P-001',
       status: 'disabled',
+      interviewStatus: 'completed',
     }), { status: 200 }))
     const api = new HttpAppApi(fetcher)
 
     await expect(api.disableParticipant('participant-001')).resolves.toMatchObject({
       id: 'participant-001',
       status: 'disabled',
+      interviewStatus: 'completed',
     })
     expect(fetcher.mock.calls[0][0]).toBe('/api/admin/participants/participant-001/disable')
   })
@@ -232,37 +236,130 @@ describe('HttpAppApi participant administration', () => {
       username: 'participant01',
       participantCode: 'P-001',
       status: 'active',
+      interviewStatus: 'active',
     }), { status: 200 }))
     const api = new HttpAppApi(fetcher)
 
     await expect(api.unlockParticipant('participant-001')).resolves.toMatchObject({
       id: 'participant-001',
       status: 'active',
+      interviewStatus: 'active',
     })
     expect(fetcher.mock.calls[0][0]).toBe('/api/admin/participants/participant-001/unlock')
   })
 })
 
-describe('HttpAppApi research boundary', () => {
-  it('does not call the unauthenticated legacy interview endpoints', async () => {
-    const fetcher = vi.fn<typeof fetch>()
-    const api = new HttpAppApi(fetcher)
-    const operations: Array<() => Promise<unknown>> = [
-      () => api.getCurrentInterview(),
-      () => api.sendMessage('interview-001', 'turn-001', '응답'),
-      () => api.listInterviews(),
-      () => api.getInterview('interview-001'),
-      () => api.reviewScorecard({
-        interviewId: 'interview-001',
-        questionId: 'q1',
-        action: 'approve',
-      }),
-      () => api.exportInterviewCsv('interview-001'),
-    ]
+describe('HttpAppApi protected interviews', () => {
+  const participantInterview = {
+    id: 'interview-001',
+    status: 'active',
+    progress: 8,
+    updatedAt: '2026-09-05T03:00:00Z',
+    messages: [{
+      id: 'message-001',
+      role: 'assistant',
+      content: '첫 질문입니다.',
+      createdAt: '2026-09-05T03:00:00Z',
+    }],
+  }
 
-    for (const operation of operations) {
-      await expect(operation()).rejects.toMatchObject({ status: 501 })
-    }
-    expect(fetcher).not.toHaveBeenCalled()
+  const interviewDetail = {
+    ...participantInterview,
+    participantCode: 'P-001',
+    reviewStatus: 'unreviewed',
+    scorecard: [{
+      questionId: 'A1',
+      question: '질문',
+      value: null,
+      rationale: null,
+      aiStatus: null,
+      expertStatus: null,
+      expertRationale: null,
+    }],
+  }
+
+  it('loads the current interview and starts one with CSRF only after a 404', async () => {
+    document.cookie = 'dabom_csrf=start-token; Path=/'
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'not found' }), { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(participantInterview), { status: 201 }))
+    const api = new HttpAppApi(fetcher)
+
+    await expect(api.getCurrentInterview()).resolves.toEqual(participantInterview)
+
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher.mock.calls[0][0]).toBe('/api/interviews/current')
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'GET', credentials: 'include' })
+    expect(fetcher.mock.calls[1][0]).toBe('/api/interviews')
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'POST', credentials: 'include' })
+    expect(new Headers(fetcher.mock.calls[1][1]?.headers).get('X-CSRF-Token')).toBe('start-token')
+  })
+
+  it('does not start a new interview for non-404 current-interview failures', async () => {
+    document.cookie = 'dabom_csrf=start-token; Path=/'
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(
+      JSON.stringify({ detail: '로그인이 필요합니다.' }),
+      { status: 401 },
+    ))
+    const api = new HttpAppApi(fetcher)
+
+    await expect(api.getCurrentInterview()).rejects.toMatchObject({ status: 401 })
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
+  it('submits a client turn to the protected interview resource', async () => {
+    document.cookie = 'dabom_csrf=message-token; Path=/'
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(
+      JSON.stringify(participantInterview),
+      { status: 200 },
+    ))
+    const api = new HttpAppApi(fetcher)
+
+    await api.sendMessage('interview/001', 'turn-001', '응답')
+
+    const [url, init] = fetcher.mock.calls[0]
+    expect(url).toBe('/api/interviews/interview%2F001/messages')
+    expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('message-token')
+    expect(JSON.parse(String(init?.body))).toEqual({ clientTurnId: 'turn-001', content: '응답' })
+  })
+
+  it('uses the protected administrator list, detail, review, and CSV endpoints', async () => {
+    document.cookie = 'dabom_csrf=review-token; Path=/'
+    const csv = 'interviewId,participantCode\ninterview-001,P-001'
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify([interviewDetail]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(interviewDetail), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(interviewDetail), { status: 200 }))
+      .mockResolvedValueOnce(new Response(csv, { headers: { 'Content-Type': 'text/csv' }, status: 200 }))
+    const api = new HttpAppApi(fetcher)
+
+    await expect(api.listInterviews()).resolves.toEqual([interviewDetail])
+    await expect(api.getInterview('interview/001')).resolves.toEqual(interviewDetail)
+    await expect(api.reviewScorecard({
+      interviewId: 'interview/001',
+      questionId: 'A/1',
+      action: 'override',
+      expertStatus: 'negative',
+      rationale: '검토 근거',
+    })).resolves.toEqual(interviewDetail)
+    const blob = await api.exportInterviewCsv('interview/001')
+    await expect(blob.text()).resolves.toBe(csv)
+
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/admin/interviews',
+      '/api/admin/interviews/interview%2F001',
+      '/api/admin/interviews/interview%2F001/scorecard/A%2F1',
+      '/api/admin/interviews/interview%2F001/csv',
+    ])
+    expect(JSON.parse(String(fetcher.mock.calls[2][1]?.body))).toEqual({
+      action: 'override',
+      expertStatus: 'negative',
+      rationale: '검토 근거',
+    })
+    expect(new Headers(fetcher.mock.calls[2][1]?.headers).get('X-CSRF-Token')).toBe('review-token')
+    expect(new Headers(fetcher.mock.calls[3][1]?.headers).get('X-CSRF-Token')).toBe('review-token')
+
+    const legacyPaths = ['/api/start', '/api/stream', '/api/sessions', '/api/review', '/api/csv']
+    expect(fetcher.mock.calls.every(([url]) => legacyPaths.every((path) => !String(url).startsWith(path)))).toBe(true)
   })
 })

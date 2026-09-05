@@ -63,7 +63,7 @@ def test_engine_is_created_lazily_and_failed_probe_returns_false(
     reset_database_state()
 
 
-def test_initial_migration_creates_only_auth_foundation_tables(
+def test_migrations_create_auth_and_research_tables(
     monkeypatch: pytest.MonkeyPatch,
     postgres_url: str,
 ) -> None:
@@ -78,12 +78,61 @@ def test_initial_migration_creates_only_auth_foundation_tables(
 
     engine = create_engine(postgres_url)
     try:
-        assert set(inspect(engine).get_table_names()) == {
+        inspector = inspect(engine)
+        assert set(inspector.get_table_names()) == {
             "alembic_version",
             "audit_events",
             "auth_sessions",
+            "expert_reviews",
+            "interview_messages",
+            "interviews",
+            "scorecard_items",
             "user_accounts",
         }
+
+        interview_checks = {
+            check["name"] for check in inspector.get_check_constraints("interviews")
+        }
+        assert {
+            "ck_interviews_progress",
+            "ck_interviews_status",
+        } <= interview_checks
+
+        interview_indexes = {
+            index["name"]: index for index in inspector.get_indexes("interviews")
+        }
+        active_index = interview_indexes["uq_interviews_active_participant"]
+        assert active_index["unique"] is True
+        assert active_index["column_names"] == ["participant_id"]
+        active_predicate = str(
+            active_index["dialect_options"]["postgresql_where"]
+        )
+        assert "status" in active_predicate
+        assert "'active'" in active_predicate
+
+        message_uniques = {
+            tuple(constraint["column_names"])
+            for constraint in inspector.get_unique_constraints("interview_messages")
+        }
+        assert ("interview_id", "sequence") in message_uniques
+        assert ("interview_id", "client_turn_id", "role") in message_uniques
+
+        foreign_key_targets = {
+            (foreign_key["constrained_columns"][0], foreign_key["referred_table"])
+            for table in (
+                "interviews",
+                "interview_messages",
+                "scorecard_items",
+                "expert_reviews",
+            )
+            for foreign_key in inspector.get_foreign_keys(table)
+        }
+        assert {
+            ("participant_id", "user_accounts"),
+            ("interview_id", "interviews"),
+            ("scorecard_item_id", "scorecard_items"),
+            ("reviewer_user_id", "user_accounts"),
+        } <= foreign_key_targets
     finally:
         engine.dispose()
         reset_database_state()

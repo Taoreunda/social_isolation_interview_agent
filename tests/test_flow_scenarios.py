@@ -3,87 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
 from pathlib import Path
 import sys
-from types import MethodType
-from typing import Dict, List
 
 BACKEND = Path(__file__).resolve().parents[1] / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from interview.engine import InterviewEngine
 from interview.scorecard import Scorecard
-from logs.interview_logger import InterviewLogger
-
-
-class DummyLogger:
-    def __init__(self, session_id: str):
-        self.session_id = session_id
-
-    def log_turn(self, *_, **__):
-        return None
-
-    def log_llm_call(self, *_, **__):
-        return None
-
-    def log_tool_call(self, *_, **__):
-        return None
-
-    def log_state_change(self, *_, **__):
-        return None
-
-    def save(self):
-        return None
-
-    def get_summary(self):
-        return {}
-
-
-class MemoryStorage:
-    def __init__(self):
-        self.saved_results: List[Dict] = []
-
-    def save_interview_state(self, state):
-        return True
-
-    def save_interview_result(self, session_id: str, payload: Dict) -> bool:
-        entry = deepcopy(payload)
-        entry["session_id"] = session_id
-        self.saved_results.append(entry)
-        return True
-
-
-class TestInterviewEngine(InterviewEngine):
-    """Test engine that bypasses actual LLM initialization."""
-
-    def _init_model(self, model_name: str):
-        """Return None — we'll mock the graph behavior."""
-        return None
-
-
-async def make_engine_with_scripted_scorecard(
-    fill_sequence: List[Dict],
-):
-    """Create an engine that simulates scorecard operations directly.
-
-    Instead of mocking the LLM, we directly manipulate the scorecard
-    through process_user_input by overriding the graph invocation.
-    """
-    engine = InterviewEngine.__new__(InterviewEngine)
-    engine.storage = MemoryStorage()
-    engine.session_loggers = {}
-
-    def dummy_logger_factory(session_id):
-        return DummyLogger(session_id)
-
-    engine._get_session_logger = MethodType(
-        lambda self, sid: self.session_loggers.setdefault(sid, dummy_logger_factory(sid)),
-        engine,
-    )
-
-    return engine
 
 
 async def scenario_scorecard_hikikomori():
@@ -188,31 +115,11 @@ async def scenario_d_branching():
     print("  ✅ scenario_d_branching")
 
 
-async def scenario_result_payload():
-    """Test that to_result_payload generates correct format."""
-    sc = Scorecard()
-    sc.record("A1", "positive", "예", "사용자가 예라고 답변")
-    sc.record("A2", "positive", "1", "주 1회")
-    sc.record("A3", "positive", "12", "12개월")
-
-    payload = sc.to_result_payload(messages=[], session_id="test_session")
-
-    assert payload["session_id"] == "test_session"
-    assert payload["final_diagnosis"] is None  # calculate not called yet
-    assert "A1" in payload["question_results"]
-    assert payload["question_results"]["A1"]["status"] == "positive"
-    assert payload["question_results"]["A1"]["extracted_value"] == "예"
-    assert payload["total_clarifications"] == 0
-
-    print("  ✅ scenario_result_payload")
-
-
 def run_scenarios():
     asyncio.run(scenario_scorecard_hikikomori())
     asyncio.run(scenario_scorecard_early_stop())
     asyncio.run(scenario_scorecard_social_isolation())
     asyncio.run(scenario_d_branching())
-    asyncio.run(scenario_result_payload())
     print("\nAll scenarios passed!")
 
 

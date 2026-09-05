@@ -365,7 +365,27 @@ describe('MockAppApi', () => {
     expect((await api.listInterviews())[0].reviewStatus).toBe('reviewed')
   })
 
-  it('rejects approval when a scorecard row has no AI decision', async () => {
+  it('rejects overrides for recorded or unchanged AI decisions', async () => {
+    const api = new MockAppApi()
+    await api.login(adminLogin)
+
+    await expect(api.reviewScorecard({
+      interviewId: 'interview-001',
+      questionId: 'q2',
+      action: 'override',
+      expertStatus: 'negative',
+      rationale: '기록 문항 변경 시도',
+    })).rejects.toMatchObject({ status: 400 })
+    await expect(api.reviewScorecard({
+      interviewId: 'interview-001',
+      questionId: 'q1',
+      action: 'override',
+      expertStatus: 'positive',
+      rationale: '같은 판정 변경 시도',
+    })).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('rejects all review actions for null AI rows and excludes them from status', async () => {
     const seed = createMockFixtureState()
     seed.interviews[0].scorecard.push({
       questionId: 'q3',
@@ -384,10 +404,27 @@ describe('MockAppApi', () => {
       questionId: 'q3',
       action: 'approve',
     })).rejects.toMatchObject({ status: 400 })
+    await expect(api.reviewScorecard({
+      interviewId: 'interview-001',
+      questionId: 'q3',
+      action: 'override',
+      expertStatus: 'negative',
+      rationale: '허용되면 안 됨',
+    })).rejects.toMatchObject({ status: 400 })
 
-    const unchanged = await api.getInterview('interview-001')
-    expect(unchanged.reviewStatus).toBe('unreviewed')
-    expect(unchanged.scorecard.find((row) => row.questionId === 'q3')?.expertStatus).toBeNull()
+    await api.reviewScorecard({
+      interviewId: 'interview-001',
+      questionId: 'q1',
+      action: 'approve',
+    })
+    const reviewed = await api.reviewScorecard({
+      interviewId: 'interview-001',
+      questionId: 'q2',
+      action: 'approve',
+    })
+
+    expect(reviewed.reviewStatus).toBe('reviewed')
+    expect(reviewed.scorecard.find((row) => row.questionId === 'q3')?.expertStatus).toBeNull()
   })
 
   it('exports a deterministic interview CSV blob', async () => {

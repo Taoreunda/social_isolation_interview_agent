@@ -447,6 +447,7 @@ def test_admin_creates_participant_with_one_time_generated_password(
         "username": "participant-002",
         "participantCode": "P-002",
         "status": "active",
+        "interviewStatus": "not_started",
     }
     assigned_password = payload["assignedPassword"]
     assert len(assigned_password) == 20
@@ -494,6 +495,7 @@ def test_admin_lists_participants_including_administrator_lock_state(
             "username": api_participant.display_username,
             "participantCode": api_participant.participant_code,
             "status": "admin_locked",
+            "interviewStatus": "not_started",
         }
     ]
 
@@ -633,6 +635,49 @@ def test_admin_disable_revokes_target_session_and_writes_audit(
     assert event is not None
     assert event.actor_user_id == api_admin.id
     assert event.target_id == api_participant.id
+
+
+def test_disable_does_not_commit_when_interview_status_lookup_fails(
+    api_admin: UserAccount,
+    api_participant: UserAccount,
+    db_session: Session,
+) -> None:
+    from auth.admin_router import get_participant_status_service
+
+    class FailingInterviewStatusService:
+        def statuses_for_participants(self, _participant_ids):
+            raise OperationalError("interview status", {}, RuntimeError("offline"))
+
+    api.app.dependency_overrides[get_participant_status_service] = (
+        lambda: FailingInterviewStatusService()
+    )
+    try:
+        with TestClient(api.app, raise_server_exceptions=False) as client:
+            login = client.post(
+                "/api/auth/login",
+                headers={"Origin": ALLOWED_ORIGIN},
+                json={
+                    "username": api_admin.display_username,
+                    "password": VALID_PASSWORD,
+                },
+            )
+            csrf_token = client.cookies.get("dabom_csrf")
+            assert login.status_code == 200
+            assert csrf_token is not None
+
+            response = client.post(
+                f"/api/admin/participants/{api_participant.id}/disable",
+                headers={
+                    "Origin": ALLOWED_ORIGIN,
+                    "X-CSRF-Token": csrf_token,
+                },
+            )
+    finally:
+        api.app.dependency_overrides.pop(get_participant_status_service, None)
+
+    assert response.status_code == 503
+    db_session.refresh(api_participant)
+    assert api_participant.status == AccountStatus.ACTIVE.value
 
 
 def test_admin_unlock_resets_failure_state_without_restoring_old_session(

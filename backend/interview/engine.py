@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import logging
 import operator
-from typing import Annotated, Any, Dict, Optional
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Annotated, Any, Dict
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import AnyMessage, SystemMessage, ToolMessage
-from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from .scorecard import Scorecard
 from .tools import scorecard_tool, execute_scorecard_action
-from logs.interview_logger import InterviewLogger
-from storage.json_storage import JSONStorage
 from app_core.config import bootstrap, get_config_value
 
 logger = logging.getLogger(__name__)
@@ -23,6 +28,22 @@ logger = logging.getLogger(__name__)
 bootstrap()
 
 MAX_TURNS = 50
+INTERVIEW_COMPLETE_MESSAGE = "인터뷰가 완료되었습니다. 참여해 주셔서 감사합니다."
+
+
+class InterviewGenerationError(RuntimeError):
+    """Raised when a model turn cannot produce a safe committed response."""
+
+
+@dataclass(frozen=True)
+class EngineTurnResult:
+    """Serializable output of one invocation-local interview graph run."""
+
+    participant_message: str
+    scorecard: dict[str, Any]
+    interview_complete: bool
+    final_diagnosis: str | None
+    report: str | None
 
 
 class InterviewState(TypedDict):
@@ -31,12 +52,6 @@ class InterviewState(TypedDict):
     interview_complete: bool
     session_id: str
 
-
-# Intro message shown at start of interview
-INTRO_MESSAGE = (
-    "지금부터 지난 한 달간의 생활을 토대로 사회적 고립 여부를 평가하겠습니다.\n"
-    "모호한 부분이 있다면 언제든 말씀해 주세요."
-)
 
 # System prompt template
 SYSTEM_PROMPT_TEMPLATE = """당신은 사회적 고립 평가 면접관입니다.
@@ -79,9 +94,6 @@ class InterviewEngine:
     """2노드 StateGraph (llm_call + tool_node) 기반 인터뷰 엔진."""
 
     def __init__(self) -> None:
-        self.storage = JSONStorage()
-        self.session_loggers: Dict[str, InterviewLogger] = {}
-
         model_name = get_config_value("INTERVIEW_MODEL", "openai:gpt-4.1-mini")
         self.model = self._init_model(model_name)
         self.model_with_tools = self.model.bind_tools([scorecard_tool])
@@ -114,7 +126,7 @@ class InterviewEngine:
             if len(state.get("messages", [])) > MAX_TURNS * 2:
                 logger.warning("Max turns exceeded, forcing end")
                 return {
-                    "messages": [SystemMessage(content="최대 턴 수를 초과했습니다. 인터뷰를 종료합니다.")],
+                    "messages": [AIMessage(content="최대 턴 수를 초과했습니다. 인터뷰를 종료합니다.")],
                     "interview_complete": True,
                 }
 
@@ -180,7 +192,7 @@ class InterviewEngine:
         )
         builder.add_edge("tool_node", "llm_call")
 
-        return builder.compile(checkpointer=MemorySaver())
+        return builder.compile()
 
     def _build_system_prompt(self, sc: Scorecard) -> str:
         """동적 system prompt 생성."""
@@ -203,90 +215,89 @@ class InterviewEngine:
             current_criteria=current_criteria,
         )
 
-    async def process_user_input(
-        self, session_id: str, user_input: str
-    ) -> Dict[str, Any]:
-        """사용자 입력 처리. chat.py와의 인터페이스."""
-        config = {"configurable": {"thread_id": session_id}}
-        interview_logger = self._get_session_logger(session_id)
-
-        graph_state = self.graph.get_state(config)
-
-        if not graph_state.values:
-            # First turn — initialize scorecard, trigger agent with system-level message
-            sc = Scorecard()
-            from langchain_core.messages import HumanMessage
-
-            # Use actual user input, or a hidden trigger that won't display
-            trigger = user_input if user_input else "[시스템] 인터뷰를 시작하세요."
-            initial_state: InterviewState = {
-                "messages": [HumanMessage(content=trigger)],
-                "scorecard": sc.to_dict(),
-                "interview_complete": False,
-                "session_id": session_id,
-            }
-            await self.graph.ainvoke(initial_state, config)
-        else:
-            from langchain_core.messages import HumanMessage
-
-            if not user_input:
-                # No input, return current state
-                pass
+    async def run_persisted_turn(
+        self,
+        session_id: str,
+        messages: Sequence[Mapping[str, str]],
+        scorecard: dict[str, Any],
+        user_input: str,
+    ) -> EngineTurnResult:
+        """Run one turn from committed state without memory or file persistence."""
+        graph_messages: list[AnyMessage] = []
+        for message in messages:
+            role = message.get("role")
+            content = message.get("content", "")
+            if role == "user":
+                graph_messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                graph_messages.append(AIMessage(content=content))
             else:
-                update = {"messages": [HumanMessage(content=user_input)]}
-                await self.graph.ainvoke(update, config)
+                raise ValueError("Persisted messages must use user or assistant roles")
 
-        # Always read full state from checkpointer
-        result_state = self.graph.get_state(config).values
+        if user_input:
+            graph_messages.append(HumanMessage(content=user_input))
+        elif not graph_messages:
+            graph_messages.append(HumanMessage(content="[시스템] 인터뷰를 시작하세요."))
+        else:
+            raise ValueError("A resumed interview turn requires user input")
 
-        # Extract last assistant message
-        response = self._extract_last_assistant_message(result_state)
-
-        # Log the turn
-        interview_logger.log_turn(
-            node="llm_call",
-            user_input=user_input,
-            llm_response=response,
-            evaluation_result=None,
-            state_summary=self._summarise_state(result_state),
-        )
-
-        # Check if interview is complete and save results
-        is_complete = result_state.get("interview_complete", False)
-        sc_data = result_state.get("scorecard", {})
-        sc = Scorecard.from_dict(sc_data)
-        final_diagnosis = sc.diagnosis
-
-        if is_complete and final_diagnosis:
-            payload = sc.to_result_payload(
-                messages=result_state.get("messages", []),
-                session_id=session_id,
-            )
-            self.storage.save_interview_result(session_id, payload)
-
-        # Build conversation history for chat.py compatibility
-        conversation = self._build_conversation_history(result_state)
-
-        return {
-            "response": response,
-            "conversation": conversation,
-            "criteria_results": {
-                k: v for k, v in sc.criteria.items() if v is not None
-            },
-            "question_results": self._build_question_results(sc),
-            "interview_complete": is_complete,
-            "final_diagnosis": final_diagnosis,
-            "state": result_state,
+        initial_state: InterviewState = {
+            "messages": graph_messages,
+            "scorecard": scorecard,
+            "interview_complete": False,
+            "session_id": session_id,
         }
 
-    def reset_session(self, session_id: str) -> None:
-        """세션 초기화."""
-        if session_id in self.session_loggers:
-            del self.session_loggers[session_id]
+        try:
+            result_state = await self.graph.ainvoke(initial_state)
+        except Exception as exc:
+            raise InterviewGenerationError(
+                "인터뷰 응답을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+            ) from exc
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+        private_model_message = self._extract_last_assistant_message(result_state).strip()
+        if not private_model_message:
+            raise InterviewGenerationError(
+                "인터뷰 응답을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+            )
+
+        result_scorecard = result_state.get("scorecard", scorecard)
+        restored_scorecard = Scorecard.from_dict(result_scorecard)
+        is_complete = bool(result_state.get("interview_complete", False))
+        report = restored_scorecard.report
+        if is_complete and report is None:
+            report = private_model_message
+
+        participant_message = self._participant_message(
+            restored_scorecard,
+            interview_complete=is_complete,
+        )
+
+        return EngineTurnResult(
+            participant_message=participant_message,
+            scorecard=restored_scorecard.to_dict(),
+            interview_complete=is_complete,
+            final_diagnosis=restored_scorecard.diagnosis,
+            report=report,
+        )
+
+    @staticmethod
+    def _participant_message(
+        scorecard: Scorecard,
+        *,
+        interview_complete: bool,
+    ) -> str:
+        """Return only canonical participant-safe text, never free-form model output."""
+        if interview_complete:
+            return INTERVIEW_COMPLETE_MESSAGE
+
+        question_id = scorecard.next_unanswered()
+        canonical = Scorecard()
+        if question_id is None or question_id not in canonical.items:
+            raise InterviewGenerationError(
+                "인터뷰 응답을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+            )
+        return str(canonical.items[question_id]["question"]).strip()
 
     def _extract_last_assistant_message(self, state: dict) -> str:
         """Extract last AI message content from state."""
@@ -295,50 +306,3 @@ class InterviewEngine:
             if hasattr(msg, "type") and msg.type == "ai" and msg.content:
                 return msg.content
         return ""
-
-    def _build_conversation_history(self, state: dict) -> list:
-        """Build conversation history compatible with chat.py display."""
-        history = []
-        for msg in state.get("messages", []):
-            if not hasattr(msg, "type") or not hasattr(msg, "content"):
-                continue
-            if msg.type == "tool":
-                continue
-            if not msg.content:
-                continue
-            # Hide system trigger messages
-            if msg.type == "human" and msg.content.startswith("[시스템]"):
-                continue
-            role = "user" if msg.type == "human" else "assistant"
-            history.append({"role": role, "content": msg.content})
-        return history
-
-    def _build_question_results(self, sc: Scorecard) -> Dict[str, Dict]:
-        """Build question_results dict compatible with result.py."""
-        results = {}
-        for qid, item in sc.items.items():
-            if item["status"] is None:
-                continue
-            results[qid] = {
-                "status": item["status"],
-                "extracted_value": item["value"],
-                "rationale": item["rationale"],
-                "timestamp": item.get("timestamp"),
-            }
-        return results
-
-    def _get_session_logger(self, session_id: str) -> InterviewLogger:
-        if session_id not in self.session_loggers:
-            self.session_loggers[session_id] = InterviewLogger(session_id)
-        return self.session_loggers[session_id]
-
-    def _summarise_state(self, state: dict) -> Dict[str, Any]:
-        sc_data = state.get("scorecard", {})
-        sc = Scorecard.from_dict(sc_data)
-        return {
-            "session_id": state.get("session_id"),
-            "next_question": sc.next_unanswered(),
-            "criteria": {k: v for k, v in sc.criteria.items() if v is not None},
-            "diagnosis": sc.diagnosis,
-            "message_count": len(state.get("messages", [])),
-        }

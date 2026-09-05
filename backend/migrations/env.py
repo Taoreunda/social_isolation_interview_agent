@@ -7,6 +7,7 @@ from logging.config import fileConfig
 from alembic import context
 from app_core.database import Base, get_database_url
 from auth import models  # noqa: F401  (register mappings with Base.metadata)
+from interview import models as interview_models  # noqa: F401
 from sqlalchemy import create_engine, pool
 
 config = context.config

@@ -143,7 +143,7 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
               <Button
                 aria-label={`${row.questionId} 동의`}
                 className={actionClass}
-                disabled={busy}
+                disabled={busy || row.aiStatus === null}
                 onClick={() => void submit({ interviewId, questionId: row.questionId, action: 'approve' }, false)}
                 size="sm"
                 type="button"
@@ -154,10 +154,10 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
               <Button
                 aria-label={`${row.questionId} 변경`}
                 className={actionClass}
-                disabled={busy}
+                disabled={busy || row.aiStatus === null || row.aiStatus === 'recorded'}
                 onClick={() => {
                   setSelected(row)
-                  setDecision(row.aiStatus === 'positive' || row.aiStatus === 'negative' ? row.aiStatus : null)
+                  setDecision(row.aiStatus === 'positive' ? 'negative' : row.aiStatus === 'negative' ? 'positive' : null)
                   setError(null)
                 }}
                 size="sm"

@@ -16,6 +16,8 @@ from auth.admin_service import (
 from auth.dependencies import (
     RequestIdentity,
     get_account_administration_service,
+    get_clock,
+    get_db,
     require_admin,
     require_admin_csrf,
     require_allowed_origin,
@@ -29,16 +31,29 @@ from auth.schemas import (
     ResetParticipantPasswordRequest,
 )
 from auth.security import generate_password
+from interview.service import InterviewService
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/admin/participants", tags=["participant administration"])
 
 
-def _participant_response(account) -> ParticipantResponse:
+def get_participant_status_service(
+    session: Session = Depends(get_db),
+    clock=Depends(get_clock),
+) -> InterviewService:
+    return InterviewService(session, clock=clock)
+
+
+def _participant_response(
+    account,
+    interview_status: str = "not_started",
+) -> ParticipantResponse:
     return ParticipantResponse(
         id=account.id,
         username=account.display_username,
         participant_code=account.participant_code,
         status=account.status,
+        interview_status=interview_status,
     )
 
 
@@ -46,15 +61,25 @@ def _participant_response(account) -> ParticipantResponse:
 def list_participants(
     _identity: RequestIdentity = Depends(require_admin),
     service: AccountAdministrationService = Depends(get_account_administration_service),
+    interview_service: InterviewService = Depends(get_participant_status_service),
 ) -> list[ParticipantResponse]:
     try:
         accounts = service.list_participants()
+        interview_statuses = interview_service.statuses_for_participants(
+            [account.id for account in accounts]
+        )
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="필수 서비스를 사용할 수 없습니다.",
         ) from exc
-    return [_participant_response(account) for account in accounts]
+    return [
+        _participant_response(
+            account,
+            interview_statuses.get(account.id, "not_started"),
+        )
+        for account in accounts
+    ]
 
 
 @router.post(
@@ -152,8 +177,12 @@ def disable_participant(
     _origin: None = Depends(require_allowed_origin),
     identity: RequestIdentity = Depends(require_admin_csrf),
     service: AccountAdministrationService = Depends(get_account_administration_service),
+    interview_service: InterviewService = Depends(get_participant_status_service),
 ) -> ParticipantResponse:
     try:
+        interview_status = interview_service.statuses_for_participants(
+            [participant_id]
+        ).get(participant_id, "not_started")
         account = service.disable_participant(
             actor_user_id=identity.context.account.id,
             participant_id=participant_id,
@@ -173,7 +202,7 @@ def disable_participant(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="필수 서비스를 사용할 수 없습니다.",
         ) from exc
-    return _participant_response(account)
+    return _participant_response(account, interview_status)
 
 
 @router.post("/{participant_id}/unlock", response_model=ParticipantResponse)
@@ -182,8 +211,12 @@ def unlock_participant(
     _origin: None = Depends(require_allowed_origin),
     identity: RequestIdentity = Depends(require_admin_csrf),
     service: AccountAdministrationService = Depends(get_account_administration_service),
+    interview_service: InterviewService = Depends(get_participant_status_service),
 ) -> ParticipantResponse:
     try:
+        interview_status = interview_service.statuses_for_participants(
+            [participant_id]
+        ).get(participant_id, "not_started")
         account = service.unlock_participant(
             actor_user_id=identity.context.account.id,
             participant_id=participant_id,
@@ -203,4 +236,4 @@ def unlock_participant(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="필수 서비스를 사용할 수 없습니다.",
         ) from exc
-    return _participant_response(account)
+    return _participant_response(account, interview_status)

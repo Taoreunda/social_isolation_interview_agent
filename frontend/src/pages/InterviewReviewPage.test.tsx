@@ -5,7 +5,6 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
-import { ApiError } from '@/app/api-error'
 import type { AppApi, InterviewDetail, InterviewListItem } from '@/app/contracts'
 import { AdminDashboardPage } from './AdminDashboardPage'
 import { InterviewReviewPage } from './InterviewReviewPage'
@@ -231,6 +230,38 @@ describe('administrator interview review', () => {
     expect(within(row).getAllByTestId('decision-icon').length).toBeGreaterThan(1)
   })
 
+  it('disables review actions until the AI has evaluated an item', async () => {
+    const pendingDetail = clone({
+      ...detail,
+      scorecard: [{
+        ...detail.scorecard[0],
+        questionId: 'q-pending',
+        aiStatus: null,
+      }],
+    })
+    const api = createApi({ getInterview: vi.fn().mockResolvedValue(pendingDetail) })
+    renderReview(api)
+
+    expect(await screen.findByRole('button', { name: 'q-pending 동의' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'q-pending 변경' })).toBeDisabled()
+  })
+
+  it('allows agreement but not change for recorded items', async () => {
+    const recordedDetail = clone({
+      ...detail,
+      scorecard: [{
+        ...detail.scorecard[0],
+        questionId: 'q-recorded',
+        aiStatus: 'recorded' as const,
+      }],
+    })
+    const api = createApi({ getInterview: vi.fn().mockResolvedValue(recordedDetail) })
+    renderReview(api)
+
+    expect(await screen.findByRole('button', { name: 'q-recorded 동의' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'q-recorded 변경' })).toBeDisabled()
+  })
+
   it('downloads a CSV blob using only the participant code and revokes its URL', async () => {
     const createObjectURL = vi.fn(() => 'blob:review')
     const revokeObjectURL = vi.fn()
@@ -354,22 +385,6 @@ describe('administrator interview review', () => {
 
     expect(await screen.findByText('인터뷰가 없습니다')).toBeInTheDocument()
     expect(api.listInterviews).toHaveBeenCalledTimes(2)
-  })
-
-  it('shows a stable state when live interview review APIs are not connected', async () => {
-    const unavailable = new ApiError(501, '인터뷰 기능은 아직 연결되지 않았습니다.')
-    const dashboard = renderDashboard(createApi({
-      listInterviews: vi.fn().mockRejectedValue(unavailable),
-    }))
-
-    expect(await screen.findByText('인터뷰 기능은 아직 연결되지 않았습니다.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
-    dashboard.unmount()
-
-    renderReview(createApi({ getInterview: vi.fn().mockRejectedValue(unavailable) }))
-
-    expect(await screen.findByText('인터뷰 기능은 아직 연결되지 않았습니다.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
   })
 
   it('ignores stale dashboard loads and safely settles an unmounted load', async () => {
@@ -591,8 +606,8 @@ describe('administrator interview review', () => {
 
     await user.click(screen.getByRole('button', { name: 'q1 변경' }))
     expect(screen.getByRole('textbox', { name: '근거' })).toHaveValue('')
-    expect(screen.getByRole('radio', { name: '긍정' })).toBeChecked()
-    expect(screen.getByRole('radio', { name: '부정' })).not.toBeChecked()
+    expect(screen.getByRole('radio', { name: '긍정' })).not.toBeChecked()
+    expect(screen.getByRole('radio', { name: '부정' })).toBeChecked()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 

@@ -68,7 +68,11 @@ def postgres_engine(postgres_url: str) -> Iterator[Engine]:
 def db_session(postgres_engine: Engine) -> Iterator[Session]:
     with postgres_engine.begin() as connection:
         connection.execute(
-            text("TRUNCATE TABLE audit_events, auth_sessions, user_accounts CASCADE")
+            text(
+                "TRUNCATE TABLE expert_reviews, scorecard_items, "
+                "interview_messages, interviews, audit_events, "
+                "auth_sessions, user_accounts CASCADE"
+            )
         )
 
     with Session(postgres_engine, expire_on_commit=False) as session:
@@ -77,5 +81,9 @@ def db_session(postgres_engine: Engine) -> Iterator[Session]:
 
     with postgres_engine.begin() as connection:
         connection.execute(
-            text("TRUNCATE TABLE audit_events, auth_sessions, user_accounts CASCADE")
+            text(
+                "TRUNCATE TABLE expert_reviews, scorecard_items, "
+                "interview_messages, interviews, audit_events, "
+                "auth_sessions, user_accounts CASCADE"
+            )
         )

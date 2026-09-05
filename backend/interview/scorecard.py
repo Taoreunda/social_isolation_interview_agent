@@ -341,52 +341,6 @@ class Scorecard:
             return ""
         return item.get("criteria", "")
 
-    def to_result_payload(
-        self,
-        messages: list,
-        session_id: str,
-    ) -> Dict[str, Any]:
-        """result.py 호환 저장 포맷으로 변환."""
-        question_results = {}
-        for qid, item in self.items.items():
-            if item["status"] is None:
-                continue
-            question_results[qid] = {
-                "status": item["status"],
-                "extracted_value": item["value"],
-                "rationale": item["rationale"],
-                "timestamp": item.get("timestamp"),
-            }
-
-        conversation_history = []
-        for msg in messages:
-            if hasattr(msg, "content") and hasattr(msg, "type"):
-                role = "user" if msg.type == "human" else "assistant"
-                if msg.type == "tool":
-                    continue  # Skip tool messages
-                conversation_history.append({
-                    "role": role,
-                    "content": msg.content,
-                    "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
-                })
-
-        total_clarifications = sum(
-            item["clarification_count"] for item in self.items.values()
-        )
-
-        return {
-            "session_id": session_id,
-            "final_diagnosis": self.diagnosis,
-            "criteria_results": {
-                k: v for k, v in self.criteria.items() if v is not None
-            },
-            "question_results": question_results,
-            "conversation_history": conversation_history,
-            "report": self.report,
-            "total_clarifications": total_clarifications,
-            "conversation_length": len(conversation_history),
-        }
-
     def to_dict(self) -> Dict[str, Any]:
         """State 직렬화."""
         return {

@@ -23,6 +23,7 @@ interface ParticipantAccountResponse {
   username: string
   participantCode: string
   status: AccountStatus
+  interviewStatus: ParticipantRecord['interviewStatus']
 }
 
 interface ParticipantCredentialResponse {
@@ -116,31 +117,67 @@ export class HttpAppApi implements AppApi {
   }
 
   async getCurrentInterview(): Promise<ParticipantInterview> {
-    return this.researchUnavailable()
+    try {
+      return await this.requestJson<ParticipantInterview>(
+        '/api/interviews/current',
+        { method: 'GET' },
+      )
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 404) throw error
+      return this.requestJson<ParticipantInterview>(
+        '/api/interviews',
+        this.withCsrf({ method: 'POST' }),
+      )
+    }
   }
 
   async sendMessage(
-    _interviewId: string,
-    _clientTurnId: string,
-    _content: string,
+    interviewId: string,
+    clientTurnId: string,
+    content: string,
   ): Promise<ParticipantInterview> {
-    return this.researchUnavailable()
+    return this.requestJson<ParticipantInterview>(
+      `${this.interviewPath(interviewId)}/messages`,
+      this.withCsrf({
+        body: JSON.stringify({ clientTurnId, content }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+    )
   }
 
   async listInterviews(): Promise<InterviewListItem[]> {
-    return this.researchUnavailable()
+    return this.requestJson<InterviewListItem[]>(
+      '/api/admin/interviews',
+      { method: 'GET' },
+    )
   }
 
-  async getInterview(_interviewId: string): Promise<InterviewDetail> {
-    return this.researchUnavailable()
+  async getInterview(interviewId: string): Promise<InterviewDetail> {
+    return this.requestJson<InterviewDetail>(
+      this.adminInterviewPath(interviewId),
+      { method: 'GET' },
+    )
   }
 
-  async reviewScorecard(_input: ReviewScorecardInput): Promise<InterviewDetail> {
-    return this.researchUnavailable()
+  async reviewScorecard(input: ReviewScorecardInput): Promise<InterviewDetail> {
+    const { interviewId, questionId, ...review } = input
+    return this.requestJson<InterviewDetail>(
+      `${this.adminInterviewPath(interviewId)}/scorecard/${encodeURIComponent(questionId)}`,
+      this.withCsrf({
+        body: JSON.stringify(review),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+    )
   }
 
-  async exportInterviewCsv(_interviewId: string): Promise<Blob> {
-    return this.researchUnavailable()
+  async exportInterviewCsv(interviewId: string): Promise<Blob> {
+    const response = await this.request(
+      `${this.adminInterviewPath(interviewId)}/csv`,
+      this.withCsrf({ method: 'POST' }),
+    )
+    return response.blob()
   }
 
   private async requestJson<T>(path: string, init: RequestInit): Promise<T> {
@@ -186,10 +223,7 @@ export class HttpAppApi implements AppApi {
   }
 
   private toParticipantRecord(participant: ParticipantAccountResponse): ParticipantRecord {
-    return {
-      ...participant,
-      interviewStatus: 'not_started',
-    }
+    return { ...participant }
   }
 
   private async updateParticipantState(
@@ -207,8 +241,12 @@ export class HttpAppApi implements AppApi {
     return `/api/admin/participants/${encodeURIComponent(participantId)}`
   }
 
-  private researchUnavailable(): never {
-    throw new ApiError(501, '인터뷰 기능은 아직 연결되지 않았습니다.')
+  private interviewPath(interviewId: string): string {
+    return `/api/interviews/${encodeURIComponent(interviewId)}`
+  }
+
+  private adminInterviewPath(interviewId: string): string {
+    return `/api/admin/interviews/${encodeURIComponent(interviewId)}`
   }
 
   private async toApiError(response: Response): Promise<ApiError> {
