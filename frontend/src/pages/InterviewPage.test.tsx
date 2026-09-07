@@ -99,7 +99,7 @@ describe('InterviewPage', () => {
     const api = createApi()
     renderInterview(api)
 
-    expect(await screen.findByRole('heading', { name: '인터뷰 시작' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '인터뷰 진행 중' })).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: '진행률' })).toHaveAttribute('aria-valuenow', '40')
     expect(screen.getByLabelText('인터뷰 진행자 메시지')).toHaveTextContent('최근 한 달간 일상을 이야기해 주세요.')
   })
@@ -108,7 +108,7 @@ describe('InterviewPage', () => {
     const api = createApi()
     const user = userEvent.setup()
     renderInterview(api)
-    await screen.findByRole('heading', { name: '인터뷰 시작' })
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
 
     await user.type(screen.getByLabelText('답변 입력'), '  혼자 지냈습니다  ')
     await user.click(screen.getByRole('button', { name: '답변 전송' }))
@@ -125,7 +125,7 @@ describe('InterviewPage', () => {
     const api = createApi()
     const user = userEvent.setup()
     renderInterview(api)
-    await screen.findByRole('heading', { name: '인터뷰 시작' })
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
 
     await user.type(screen.getByLabelText('답변 입력'), '   ')
     await user.click(screen.getByRole('button', { name: '답변 전송' }))
@@ -138,7 +138,7 @@ describe('InterviewPage', () => {
     const response = deferred<ParticipantInterview>()
     const api = createApi({ sendMessage: vi.fn(() => response.promise) })
     renderInterview(api)
-    await screen.findByRole('heading', { name: '인터뷰 시작' })
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
     fireEvent.change(screen.getByLabelText('답변 입력'), { target: { value: '답변' } })
     const form = screen.getByRole('button', { name: '답변 전송' }).closest('form')!
 
@@ -160,7 +160,7 @@ describe('InterviewPage', () => {
     })
     const user = userEvent.setup()
     renderInterview(api)
-    await screen.findByRole('heading', { name: '인터뷰 시작' })
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
     await user.type(screen.getByLabelText('답변 입력'), '응답')
     await user.click(screen.getByRole('button', { name: '답변 전송' }))
     expect(await screen.findByRole('alert')).toBeInTheDocument()
@@ -187,7 +187,7 @@ describe('InterviewPage', () => {
     })
     const user = userEvent.setup()
     renderInterview(api)
-    await screen.findByRole('heading', { name: '인터뷰 시작' })
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
 
     await user.type(screen.getByLabelText('답변 입력'), '커밋 후 재시도 응답')
     await user.click(screen.getByRole('button', { name: '답변 전송' }))
@@ -231,7 +231,7 @@ describe('InterviewPage', () => {
     const api = createApi({ sendMessage: vi.fn().mockResolvedValue(committed) })
     const user = userEvent.setup()
     renderInterview(api)
-    await screen.findByRole('heading', { name: '인터뷰 시작' })
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
     await user.type(screen.getByLabelText('답변 입력'), '로컬 초안')
     await user.click(screen.getByRole('button', { name: '답변 전송' }))
 
@@ -246,7 +246,7 @@ describe('InterviewPage', () => {
     renderInterview(api)
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '다시 시도' }))
-    expect(await screen.findByRole('heading', { name: '인터뷰 시작' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '인터뷰 진행 중' })).toBeInTheDocument()
   })
 
   it('ignores a load result after unmount', async () => {
@@ -256,7 +256,7 @@ describe('InterviewPage', () => {
     page.unmount()
 
     await act(async () => load.resolve(cloneInterview()))
-    expect(screen.queryByRole('heading', { name: '인터뷰 시작' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '인터뷰 진행 중' })).not.toBeInTheDocument()
   })
 
   it('hides scorecard and diagnosis from participants', async () => {
@@ -279,6 +279,74 @@ describe('InterviewPage', () => {
     expect(page).not.toHaveTextContent('연구 전용 질문')
     expect(page).not.toHaveTextContent('연구 전용 값')
     expect(page).not.toHaveTextContent('연구 전용 근거')
+  })
+
+  it('docks the composer under a scrollable conversation', async () => {
+    const api = createApi()
+    renderInterview(api)
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
+
+    const main = screen.getByRole('main')
+    expect(main).toHaveClass('flex', 'flex-col', 'flex-1')
+
+    const scroller = screen.getByRole('list', { name: '인터뷰 대화' }).parentElement
+    expect(scroller).toHaveClass('flex-1', 'overflow-y-auto')
+
+    expect(main.lastElementChild?.tagName).toBe('FORM')
+  })
+
+  it('shows the answer and a generating status while the turn is in flight', async () => {
+    const response = deferred<ParticipantInterview>()
+    const api = createApi({ sendMessage: vi.fn(() => response.promise) })
+    const user = userEvent.setup()
+    renderInterview(api)
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
+    await user.type(screen.getByLabelText('답변 입력'), '보내는 중인 답변')
+    await user.click(screen.getByRole('button', { name: '답변 전송' }))
+
+    expect(screen.getByLabelText('참여자 메시지')).toHaveTextContent('보내는 중인 답변')
+    expect(screen.getByLabelText('답변 입력')).toHaveValue('')
+    expect(screen.getByText('답변을 생성하는 중')).toHaveAttribute('role', 'status')
+
+    await act(async () => response.resolve(cloneInterview()))
+    expect(screen.queryByText('답변을 생성하는 중')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('참여자 메시지')).not.toBeInTheDocument()
+  })
+
+  it('keeps an unsent answer visible after a send error', async () => {
+    const api = createApi({ sendMessage: vi.fn().mockRejectedValue(new Error('lost response')) })
+    const user = userEvent.setup()
+    renderInterview(api)
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
+    await user.type(screen.getByLabelText('답변 입력'), '잃으면 안 되는 답변')
+    await user.click(screen.getByRole('button', { name: '답변 전송' }))
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.getByLabelText('참여자 메시지')).toHaveTextContent('잃으면 안 되는 답변')
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeInTheDocument()
+    expect(screen.queryByText('답변을 생성하는 중')).not.toBeInTheDocument()
+  })
+
+  it('separates interviewer and participant turns onto distinct surfaces', async () => {
+    const conversation = cloneInterview({
+      ...interview,
+      messages: [
+        { id: 'message-001', role: 'assistant', content: '질문입니다.', createdAt: '2026-08-25T09:00:00.000Z' },
+        { id: 'message-002', role: 'user', content: '답변입니다.', createdAt: '2026-08-25T09:01:00.000Z' },
+      ],
+    })
+    const api = createApi({ getCurrentInterview: vi.fn().mockResolvedValue(conversation) })
+    renderInterview(api)
+
+    const interviewer = (await screen.findByLabelText('인터뷰 진행자 메시지')).querySelector('p')
+    const participant = screen.getByLabelText('참여자 메시지').querySelector('p')
+
+    expect(interviewer).toHaveClass('bg-muted')
+    expect(participant).toHaveClass('bg-primary', 'text-primary-foreground')
+    expect(interviewer).not.toHaveClass('bg-primary')
+    expect(participant).not.toHaveClass('bg-muted')
+    expect(interviewer).toHaveClass('whitespace-pre-wrap')
+    expect(participant).toHaveClass('whitespace-pre-wrap')
   })
 
   it('renders multiline messages and a neutral completion state without reset actions', async () => {

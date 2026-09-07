@@ -20,7 +20,7 @@ export function ParticipantLayout() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-dvh flex-col">
       <header className="flex min-w-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3">
         <NavLink className="shrink-0 font-semibold text-foreground no-underline" to="/interview">Dabom</NavLink>
         <nav aria-label="참여자 탐색" className="order-3 flex w-full items-center gap-1 sm:order-none sm:w-auto">
@@ -61,7 +61,7 @@ export function ParticipantLayout() {
         )}
       </header>
       <NavigationAnnouncement />
-      <div className="flex-1"><Outlet /></div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto"><Outlet /></div>
     </div>
   )
 }

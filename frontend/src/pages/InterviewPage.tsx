@@ -21,6 +21,7 @@ function phaseFor(interview: ParticipantInterview): InterviewPhase {
 export function InterviewPage() {
   const api = useApi()
   const [answer, setAnswer] = useState('')
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null)
   const [interview, setInterview] = useState<ParticipantInterview | null>(null)
   const [loadError, setLoadError] = useState('인터뷰를 불러오지 못했습니다')
   const [phase, setPhase] = useState<InterviewPhase>('loading')
@@ -67,12 +68,14 @@ export function InterviewPage() {
     pendingTurn.current = turn
     const operation = ++requestGeneration.current
     inFlight.current = true
+    setPendingMessage(turn.content)
+    setAnswer('')
     setPhase('sending')
     try {
       const detail = await api.sendMessage(interview.id, turn.clientTurnId, turn.content)
       if (!mounted.current || operation !== requestGeneration.current) return
       pendingTurn.current = null
-      setAnswer('')
+      setPendingMessage(null)
       setInterview(detail)
       setPhase(phaseFor(detail))
     } catch {
@@ -85,7 +88,7 @@ export function InterviewPage() {
   }
 
   if (phase === 'loading') {
-    return <main aria-busy="true" className="mx-auto w-full max-w-3xl px-4 py-6"><p role="status">인터뷰 시작</p></main>
+    return <main aria-busy="true" className="mx-auto w-full max-w-3xl px-4 py-6"><p role="status">인터뷰를 불러오는 중</p></main>
   }
 
   if (phase === 'load_error') {
@@ -104,7 +107,7 @@ export function InterviewPage() {
 
   if (phase === 'completed') {
     return (
-      <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 py-6">
         <h1 className="text-xl font-semibold">완료했습니다</h1>
         <Chat
           answer=""
@@ -112,6 +115,7 @@ export function InterviewPage() {
           messages={interview.messages}
           onAnswerChange={() => undefined}
           onSubmit={() => undefined}
+          pendingMessage={null}
           progress={interview.progress}
           retrying={false}
           showComposer={false}
@@ -122,8 +126,8 @@ export function InterviewPage() {
 
   const retrying = phase === 'send_error'
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-6">
-      <h1 className="text-xl font-semibold">인터뷰 시작</h1>
+    <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 py-6">
+      <h1 className="text-xl font-semibold">인터뷰 진행 중</h1>
       {retrying && <p className="mt-3 inline-flex items-center gap-2" role="alert"><AlertCircle aria-hidden="true" className="size-4" />답변을 보내지 못했습니다</p>}
       <Chat
         answer={answer}
@@ -131,6 +135,7 @@ export function InterviewPage() {
         messages={interview.messages}
         onAnswerChange={setAnswer}
         onSubmit={(event) => void submitAnswer(event)}
+        pendingMessage={pendingMessage}
         progress={interview.progress}
         retrying={retrying}
         showComposer

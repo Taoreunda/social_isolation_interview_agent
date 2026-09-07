@@ -70,7 +70,7 @@ export function PasswordPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-sm items-center px-4">
+    <main className="mx-auto flex w-full max-w-sm flex-1 items-center px-4 py-6">
       <form className="w-full space-y-5" onSubmit={(event) => void handleSubmit(event)}>
         <h1 className="text-2xl font-semibold">비밀번호 변경</h1>
         <div className="space-y-2">

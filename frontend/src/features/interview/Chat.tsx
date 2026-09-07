@@ -1,4 +1,5 @@
 import { Send } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import type { FormEvent } from 'react'
 
 import type { InterviewMessage } from '@/app/contracts'
@@ -12,6 +13,7 @@ interface ChatProps {
   messages: InterviewMessage[]
   onAnswerChange: (answer: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  pendingMessage: string | null
   progress: number
   retrying: boolean
   showComposer: boolean
@@ -21,35 +23,55 @@ function roleName(role: InterviewMessage['role']): string {
   return role === 'assistant' ? '인터뷰 진행자' : '참여자'
 }
 
+function bubbleClass(role: InterviewMessage['role']): string {
+  const shared = 'max-w-[75ch] whitespace-pre-wrap rounded-lg px-4 py-3 text-sm leading-6'
+  return role === 'user'
+    ? `${shared} bg-primary text-primary-foreground`
+    : `${shared} bg-muted`
+}
+
 export function Chat({
   answer,
   isSending,
   messages,
   onAnswerChange,
   onSubmit,
+  pendingMessage,
   progress,
   retrying,
   showComposer,
 }: ChatProps) {
   const submitLabel = retrying ? '다시 시도' : '답변 전송'
+  const conversation = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const node = conversation.current
+    if (node) node.scrollTop = node.scrollHeight
+  }, [messages.length, pendingMessage, isSending])
 
   return (
     <>
       <Progress aria-label="진행률" aria-valuemax={100} aria-valuemin={0} aria-valuenow={progress} value={progress} />
-      <ol aria-label="인터뷰 대화" className="mt-6 space-y-4">
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto" ref={conversation}>
+      <ol aria-label="인터뷰 대화" className="space-y-4">
         {messages.map((message) => (
           <li
             aria-label={`${roleName(message.role)} 메시지`}
             className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
             key={message.id}
           >
-            <p className="max-w-[75ch] whitespace-pre-wrap border-b border-border pb-2 text-sm leading-6">
+            <p className={bubbleClass(message.role)}>
               {message.content}
             </p>
           </li>
         ))}
+        {pendingMessage !== null && <li aria-label="참여자 메시지" className="flex justify-end">
+          <p className={bubbleClass('user')}>{pendingMessage}</p>
+        </li>}
       </ol>
-      {showComposer && <form className="mt-6 flex min-w-0 items-end gap-2" onSubmit={onSubmit}>
+      {isSending && <p className="mt-4 text-sm leading-6 text-muted-foreground" role="status">답변을 생성하는 중</p>}
+      </div>
+      {showComposer && <form className="mt-4 flex min-w-0 items-end gap-2" onSubmit={onSubmit}>
         <div className="min-w-0 flex-1">
           <label className="sr-only" htmlFor="interview-answer">답변 입력</label>
           <Textarea
