@@ -21,11 +21,26 @@ def execute_scorecard_action(
     if action == "record":
         if not question_id or not status:
             return "오류: record에는 question_id와 status가 필요합니다."
+        open_question = sc.next_unanswered()
+        if open_question is not None and question_id != open_question:
+            return (
+                f"오류: '{question_id}'은 아직 참여자에게 묻지 않은 문항입니다. "
+                f"현재 열린 문항은 '{open_question}'입니다. "
+                "묻지 않은 문항은 기입할 수 없습니다."
+            )
         return sc.record(question_id, status, value, rationale)
 
     elif action == "update":
         if not question_id or not status:
             return "오류: update에는 question_id와 status가 필요합니다."
+        item = sc.items.get(question_id)
+        if item is None:
+            return f"오류: 알 수 없는 질문 ID '{question_id}'."
+        if item["status"] is None:
+            return (
+                f"오류: '{question_id}'은 기입된 적이 없어 수정할 수 없습니다. "
+                "질문 순서에 따라 record를 사용하세요."
+            )
         return sc.update(question_id, status, value, rationale)
 
     elif action == "clear":
