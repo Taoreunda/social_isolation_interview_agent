@@ -260,6 +260,30 @@ def require_admin_csrf(
     return identity
 
 
+def require_interview_subject(
+    identity: RequestIdentity = Depends(require_current_user),
+) -> RequestIdentity:
+    """Allow a participant, or an administrator checking the interview itself."""
+    if identity.context.account.role not in (Role.PARTICIPANT.value, Role.ADMIN.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="인터뷰 권한이 필요합니다.",
+        )
+    return identity
+
+
+def require_interview_subject_csrf(
+    identity: RequestIdentity = Depends(require_csrf),
+) -> RequestIdentity:
+    """Same rule as require_interview_subject for state-changing requests."""
+    if identity.context.account.role not in (Role.PARTICIPANT.value, Role.ADMIN.value):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="인터뷰 권한이 필요합니다.",
+        )
+    return identity
+
+
 def require_participant(
     identity: RequestIdentity = Depends(require_current_user),
 ) -> RequestIdentity:

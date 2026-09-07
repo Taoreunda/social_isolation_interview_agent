@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from auth.policy import Role
 from auth.schemas import ApiSchema
 from interview.models import Interview
 from pydantic import Field, model_validator
@@ -89,13 +90,21 @@ def participant_response(interview: Interview) -> ParticipantInterviewResponse:
     )
 
 
+def subject_label(interview: Interview) -> str:
+    """Name the interview subject: a participant code, or a labelled administrator."""
+    account = interview.participant
+    if account.role == Role.ADMIN.value:
+        return f"관리자 ({account.display_username})"
+    return account.participant_code or ""
+
+
 def admin_list_response(
     interview: Interview,
     review_status: ReviewStatus,
 ) -> InterviewListItemResponse:
     return InterviewListItemResponse(
         id=interview.id,
-        participant_code=interview.participant.participant_code or "",
+        participant_code=subject_label(interview),
         status=interview.status,
         progress=interview.progress,
         review_status=review_status,

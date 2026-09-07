@@ -212,11 +212,14 @@ def test_participant_start_requires_auth_origin_csrf_and_correct_role(
 
     with TestClient(api.app) as admin_client:
         admin_csrf = login(admin_client, admin)
-        forbidden = admin_client.post(
+        admin_started = admin_client.post(
             "/api/interviews",
             headers=mutation_headers(admin_csrf),
         )
-    assert forbidden.status_code == 403
+    assert admin_started.status_code == 201
+    assert admin_started.json()["id"] != started.json()["id"], (
+        "an administrator gets an interview of their own, never the participant's"
+    )
 
 
 def test_message_retry_ownership_and_generation_failure_are_safe(
@@ -353,7 +356,7 @@ def test_admin_list_detail_review_export_and_participant_status(
             f"/api/admin/participants/{participant.id}/disable",
             headers=mutation_headers(admin_csrf),
         )
-        participant_route = admin_client.get("/api/interviews/current")
+        own_interview = admin_client.get("/api/interviews/current")
 
     assert listing.status_code == 200
     assert listing.json()[0]["participantCode"] == "P-201"
@@ -372,8 +375,63 @@ def test_admin_list_detail_review_export_and_participant_status(
     assert "attachment" in exported.headers["content-disposition"]
     assert "'=external()" in exported.text
     assert disabled.json()["interviewStatus"] == "active"
-    assert participant_route.status_code == 403
+    assert own_interview.status_code == 404, (
+        "the administrator has no interview of their own here"
+    )
 
     actions = list(db_session.scalars(select(AuditEvent.action)))
     assert "interview.scorecard_reviewed" in actions
     assert "interview.csv_exported" in actions
+
+
+def test_an_administrator_can_run_an_interview_for_debugging(
+    db_session: Session,
+    api_password_service: PasswordService,
+    api_fake_engine: ApiFakeEngine,
+) -> None:
+    admin = create_account(
+        db_session,
+        api_password_service,
+        username="debug-admin",
+        role=Role.ADMIN.value,
+        participant_code=None,
+    )
+    participant = create_account(
+        db_session,
+        api_password_service,
+        username="other-participant",
+        role=Role.PARTICIPANT.value,
+        participant_code="P-OTHER",
+    )
+
+    with TestClient(api.app) as admin_client:
+        csrf = login(admin_client, admin)
+
+        assert admin_client.get("/api/interviews/current").status_code == 404
+
+        started = admin_client.post("/api/interviews", headers=mutation_headers(csrf))
+        assert started.status_code == 201
+        interview_id = started.json()["id"]
+
+        turn = admin_client.post(
+            f"/api/interviews/{interview_id}/messages",
+            headers=mutation_headers(csrf),
+            json={"clientTurnId": str(uuid4()), "content": "관리자 점검 응답"},
+        )
+        assert turn.status_code == 200
+        assert len(turn.json()["messages"]) == 3
+
+        listed = admin_client.get("/api/admin/interviews").json()
+        own = next(row for row in listed if row["id"] == interview_id)
+        assert own["participantCode"] == "관리자 (debug-admin)"
+
+    with TestClient(api.app) as participant_client:
+        participant_csrf = login(participant_client, participant)
+        assert participant_client.get(
+            f"/api/admin/interviews/{interview_id}"
+        ).status_code == 403
+        assert participant_client.post(
+            f"/api/interviews/{interview_id}/messages",
+            headers=mutation_headers(participant_csrf),
+            json={"clientTurnId": str(uuid4()), "content": "남의 인터뷰"},
+        ).status_code == 404

@@ -1,4 +1,4 @@
-import { AlertCircle, CircleCheck, Clock3, FileSearch, FileText, RefreshCw } from 'lucide-react'
+import { AlertCircle, CircleCheck, Clock3, FileSearch, FileText, MessageSquare, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -83,7 +83,15 @@ export function AdminDashboardPage() {
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
-      <h1 className="text-xl font-semibold">검토</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">검토</h1>
+        <Link
+          className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9"
+          to="/admin/interview"
+        >
+          <MessageSquare aria-hidden="true" className="size-4" />인터뷰 해보기
+        </Link>
+      </div>
       <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-border py-4 sm:grid-cols-4">
         {metrics.map(([label, value]) => (
           <div key={label}>

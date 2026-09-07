@@ -861,3 +861,29 @@ describe('administrator interview review', () => {
     expect(click).toHaveBeenCalledOnce()
   })
 })
+
+describe('administrator interview access', () => {
+  it('offers a way into the interview from the dashboard', async () => {
+    const api = createApi()
+    renderDashboard(api)
+    await screen.findByText('P-001')
+
+    const entry = screen.getByRole('link', { name: '인터뷰 해보기' })
+    expect(entry).toHaveAttribute('href', '/admin/interview')
+  })
+
+  it('labels an administrator run in the queue', async () => {
+    const adminRun: InterviewListItem = {
+      id: 'interview-admin',
+      participantCode: '관리자 (testadmin)',
+      status: 'active',
+      progress: 20,
+      reviewStatus: 'unreviewed',
+      updatedAt: '2026-09-07T09:00:00.000Z',
+    }
+    const api = createApi({ listInterviews: vi.fn().mockResolvedValue([adminRun]) })
+    renderDashboard(api)
+
+    expect(await screen.findByText('관리자 (testadmin)')).toBeInTheDocument()
+  })
+})

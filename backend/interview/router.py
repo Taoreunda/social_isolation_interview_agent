@@ -13,8 +13,8 @@ from auth.dependencies import (
     require_admin,
     require_admin_csrf,
     require_allowed_origin,
-    require_participant,
-    require_participant_csrf,
+    require_interview_subject,
+    require_interview_subject_csrf,
 )
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from interview.engine import InterviewEngine, InterviewGenerationError
@@ -98,7 +98,7 @@ def _translate_error(exc: Exception) -> HTTPException:
     response_model=ParticipantInterviewResponse,
 )
 def get_current_interview(
-    identity: RequestIdentity = Depends(require_participant),
+    identity: RequestIdentity = Depends(require_interview_subject),
     service: InterviewService = Depends(get_interview_read_service),
 ) -> ParticipantInterviewResponse:
     try:
@@ -120,7 +120,7 @@ def get_current_interview(
 )
 async def start_interview(
     _origin: None = Depends(require_allowed_origin),
-    identity: RequestIdentity = Depends(require_participant_csrf),
+    identity: RequestIdentity = Depends(require_interview_subject_csrf),
     service: InterviewService = Depends(get_interview_turn_service),
 ) -> ParticipantInterviewResponse:
     try:
@@ -138,7 +138,7 @@ async def submit_interview_message(
     interview_id: UUID,
     payload: InterviewMessageRequest,
     _origin: None = Depends(require_allowed_origin),
-    identity: RequestIdentity = Depends(require_participant_csrf),
+    identity: RequestIdentity = Depends(require_interview_subject_csrf),
     service: InterviewService = Depends(get_interview_turn_service),
 ) -> ParticipantInterviewResponse:
     try:
