@@ -246,7 +246,7 @@ export function InterviewReviewPage() {
         className={`inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9 ${detail.status === 'completed' ? '' : 'ml-auto'}`}
         to={`/admin/interviews/${detail.id}/transcript`}
       >
-        <MessagesSquare aria-hidden="true" className="size-4" />대화 보기
+        <MessagesSquare aria-hidden="true" className="size-4" />인터뷰 해보기
       </Link>
       <Button
         aria-busy={exporting}

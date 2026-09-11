@@ -409,7 +409,7 @@ describe('administrator interview review', () => {
     expect(screen.queryByRole('heading', { name: '대화' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('진행자 메시지')).not.toBeInTheDocument()
 
-    const entry = screen.getByRole('link', { name: '대화 보기' })
+    const entry = screen.getAllByRole('link', { name: '인터뷰 해보기' })[0]
     expect(entry).toHaveAttribute('href', '/admin/interviews/interview-001/transcript')
   })
 
