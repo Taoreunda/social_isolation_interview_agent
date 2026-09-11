@@ -409,8 +409,17 @@ describe('administrator interview review', () => {
     expect(screen.queryByRole('heading', { name: '대화' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('진행자 메시지')).not.toBeInTheDocument()
 
-    const entry = screen.getAllByRole('link', { name: '인터뷰 해보기' })[0]
+    const entry = screen.getByRole('link', { name: '대화 기록' })
     expect(entry).toHaveAttribute('href', '/admin/interviews/interview-001/transcript')
+  })
+
+  it('opens a live interview, not a reading screen, from 인터뷰 해보기', async () => {
+    const api = createApi()
+    renderReview(api)
+    await screen.findByText('q1')
+
+    const entry = screen.getByRole('link', { name: '인터뷰 해보기' })
+    expect(entry).toHaveAttribute('href', '/admin/interview')
   })
 
   it('shows the whole conversation on the transcript screen', async () => {

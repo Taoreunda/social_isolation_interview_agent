@@ -1,4 +1,4 @@
-import { AlertCircle, Archive, Download, MessagesSquare, RefreshCw } from 'lucide-react'
+import { AlertCircle, Archive, Download, MessageSquare, MessagesSquare, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
@@ -32,6 +32,9 @@ function csvName(code: string): string {
 function criterionLabel(key: string, met: boolean | null): string {
   return `${key} ${met === null ? '미평가' : met ? '충족' : '미충족'}`
 }
+
+const headerLinkClass =
+  'inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9'
 
 export function InterviewReviewPage() {
   const api = useApi()
@@ -232,32 +235,34 @@ export function InterviewReviewPage() {
         <h1 className="text-xl font-semibold">인터뷰 검토</h1>
         <p className="mt-1 text-sm text-muted-foreground">{detail.participantCode}</p>
       </div>
-      {detail.status === 'completed' && <Button
-        aria-busy={archiving}
-        className="ml-auto min-h-11 sm:min-h-9"
-        disabled={archiving}
-        onClick={() => void archive()}
-        type="button"
-        variant="outline"
-      >
-        <Archive aria-hidden="true" />보관
-      </Button>}
-      <Link
-        className={`inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9 ${detail.status === 'completed' ? '' : 'ml-auto'}`}
-        to={`/admin/interviews/${detail.id}/transcript`}
-      >
-        <MessagesSquare aria-hidden="true" className="size-4" />인터뷰 해보기
-      </Link>
-      <Button
-        aria-busy={exporting}
-        className={detail.status === 'completed' ? 'min-h-11 sm:min-h-9' : 'ml-auto min-h-11 sm:min-h-9'}
-        disabled={exporting}
-        onClick={() => void exportCsv()}
-        type="button"
-        variant="outline"
-      >
-        <Download aria-hidden="true" />CSV 다운로드
-      </Button>
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        {detail.status === 'completed' && <Button
+          aria-busy={archiving}
+          className="min-h-11 sm:min-h-9"
+          disabled={archiving}
+          onClick={() => void archive()}
+          type="button"
+          variant="outline"
+        >
+          <Archive aria-hidden="true" />보관
+        </Button>}
+        <Link className={headerLinkClass} to={`/admin/interviews/${detail.id}/transcript`}>
+          <MessagesSquare aria-hidden="true" className="size-4" />대화 기록
+        </Link>
+        <Link className={headerLinkClass} to="/admin/interview">
+          <MessageSquare aria-hidden="true" className="size-4" />인터뷰 해보기
+        </Link>
+        <Button
+          aria-busy={exporting}
+          className="min-h-11 sm:min-h-9"
+          disabled={exporting}
+          onClick={() => void exportCsv()}
+          type="button"
+          variant="outline"
+        >
+          <Download aria-hidden="true" />CSV 다운로드
+        </Button>
+      </div>
     </div>
     {exportError && <p className="mt-3 inline-flex items-center gap-2" role="alert">
       <AlertCircle aria-hidden="true" className="size-4" />{exportError}
