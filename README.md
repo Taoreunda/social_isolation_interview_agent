@@ -64,10 +64,11 @@ uv sync
 - `POST /api/interviews/{id}/messages`
 - `GET /api/admin/interviews`, `GET /api/admin/interviews/{id}`
 - `POST /api/admin/interviews/{id}/scorecard/{questionId}`
-- `POST /api/admin/interviews/{id}/csv`
+- `POST /api/admin/interviews/{id}/archive`
+- `POST /api/admin/interviews/csv`, `POST /api/admin/interviews/{id}/csv`
 - `GET /api/health`, `GET /api/ready`
 
-참여자 응답에는 공개 대화와 진행 상태만 포함됩니다. 관리자 상세 응답에는 참여자 코드, 대화, 점수표, AI 근거와 전문가 검토가 포함되며 진단·보고서는 현재 API로 노출하지 않습니다.
+참여자 응답에는 공개 대화와 진행 상태만 포함됩니다. 관리자 상세 응답에는 참여자 코드, 대화, 점수표, AI 근거와 전문가 검토에 더해 진단, 기준 충족 여부, 요약, 알고리즘 버전과 완료 시각이 포함됩니다. 참여자는 이 중 어느 것도 볼 수 없습니다.
 
 ## 검증
 

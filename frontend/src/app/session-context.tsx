@@ -76,11 +76,14 @@ function withSessionErrors(api: AppApi, authorizedRequest: AuthorizedRequest): A
       () => api.resetParticipantPassword(participantId),
     ),
     disableParticipant: (participantId) => authorizedRequest(() => api.disableParticipant(participantId)),
+    enableParticipant: (participantId) => authorizedRequest(() => api.enableParticipant(participantId)),
     unlockParticipant: (participantId) => authorizedRequest(() => api.unlockParticipant(participantId)),
     listInterviews: () => authorizedRequest(() => api.listInterviews()),
     getInterview: (interviewId) => authorizedRequest(() => api.getInterview(interviewId)),
     reviewScorecard: (input) => authorizedRequest(() => api.reviewScorecard(input)),
+    archiveInterview: (interviewId) => authorizedRequest(() => api.archiveInterview(interviewId)),
     exportInterviewCsv: (interviewId) => authorizedRequest(() => api.exportInterviewCsv(interviewId)),
+    exportInterviewsCsv: (selection) => authorizedRequest(() => api.exportInterviewsCsv(selection)),
   }
 }
 

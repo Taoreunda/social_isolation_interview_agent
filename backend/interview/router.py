@@ -19,6 +19,7 @@ from auth.dependencies import (
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from interview.engine import InterviewEngine, InterviewGenerationError
 from interview.schemas import (
+    ExportInterviewsRequest,
     InterviewDetailResponse,
     InterviewListItemResponse,
     InterviewMessageRequest,
@@ -217,6 +218,50 @@ def review_scorecard(
     except (InterviewNotFound, InvalidReview, SQLAlchemyError) as exc:
         raise _translate_error(exc) from exc
     return admin_detail_response(interview, service.review_status(interview))
+
+
+@router.post(
+    "/admin/interviews/{interview_id}/archive",
+    response_model=InterviewDetailResponse,
+)
+def archive_interview(
+    interview_id: UUID,
+    _origin: None = Depends(require_allowed_origin),
+    identity: RequestIdentity = Depends(require_admin_csrf),
+    service: InterviewService = Depends(get_interview_read_service),
+) -> InterviewDetailResponse:
+    try:
+        interview = service.archive_interview(
+            reviewer_user_id=identity.context.account.id,
+            interview_id=interview_id,
+        )
+    except (InterviewNotFound, InterviewStateConflict, SQLAlchemyError) as exc:
+        raise _translate_error(exc) from exc
+    return admin_detail_response(interview, service.review_status(interview))
+
+
+@router.post("/admin/interviews/csv")
+def export_interviews_csv(
+    payload: ExportInterviewsRequest,
+    _origin: None = Depends(require_allowed_origin),
+    identity: RequestIdentity = Depends(require_admin_csrf),
+    service: InterviewService = Depends(get_interview_read_service),
+) -> Response:
+    try:
+        content = service.export_many_csv(
+            reviewer_user_id=identity.context.account.id,
+            interview_ids=payload.interview_ids,
+            participant_ids=payload.participant_ids,
+        )
+    except SQLAlchemyError as exc:
+        raise _translate_error(exc) from exc
+    selected = bool(payload.interview_ids or payload.participant_ids)
+    scope = "selected" if selected else "all"
+    return Response(
+        content=content.encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="interviews-{scope}.csv"'},
+    )
 
 
 @router.post("/admin/interviews/{interview_id}/csv")

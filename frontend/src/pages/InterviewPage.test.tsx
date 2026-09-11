@@ -39,11 +39,14 @@ function createApi(overrides: Partial<AppApi> = {}): AppApi {
     createParticipant: vi.fn(),
     resetParticipantPassword: vi.fn(),
     disableParticipant: vi.fn(),
+    enableParticipant: vi.fn(),
     unlockParticipant: vi.fn(),
     listInterviews: vi.fn(),
     getInterview: vi.fn(),
     reviewScorecard: vi.fn(),
+    archiveInterview: vi.fn(),
     exportInterviewCsv: vi.fn(),
+    exportInterviewsCsv: vi.fn(),
     ...overrides,
   }
 }
@@ -119,6 +122,21 @@ describe('InterviewPage', () => {
       '혼자 지냈습니다',
     ))
     expect(crypto.randomUUID).toHaveBeenCalledOnce()
+  })
+
+  it('offers no send until there is something to send', async () => {
+    const api = createApi()
+    const user = userEvent.setup()
+    renderInterview(api)
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
+
+    expect(screen.getByRole('button', { name: '답변 전송' })).toBeDisabled()
+
+    await user.type(screen.getByLabelText('답변 입력'), '   ')
+    expect(screen.getByRole('button', { name: '답변 전송' })).toBeDisabled()
+
+    await user.type(screen.getByLabelText('답변 입력'), '실제 답변')
+    expect(screen.getByRole('button', { name: '답변 전송' })).toBeEnabled()
   })
 
   it('rejects whitespace-only answers', async () => {

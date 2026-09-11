@@ -412,15 +412,21 @@ def test_admin_review_rules_status_audit_and_formula_safe_csv(
             question_id="A2",
             action="approve",
         )
-    with pytest.raises(InvalidReview):
-        service.review_scorecard(
-            reviewer_user_id=admin_id,
-            interview_id=interview_id,
-            question_id="A1",
-            action="override",
-            expert_status="negative",
-            rationale="   ",
-        )
+    blank_rationale = service.review_scorecard(
+        reviewer_user_id=admin_id,
+        interview_id=interview_id,
+        question_id="A1",
+        action="override",
+        expert_status="negative",
+        rationale="   ",
+    )
+    a1_review = next(
+        item.expert_review
+        for item in blank_rationale.scorecard_items
+        if item.question_id == "A1"
+    )
+    assert a1_review is not None
+    assert a1_review.rationale is None, "a blank rationale is stored as none at all"
     with pytest.raises(InvalidReview):
         service.review_scorecard(
             reviewer_user_id=admin_id,
@@ -532,3 +538,80 @@ def test_participant_account_status_reports_an_archived_interview(
     statuses = service.statuses_for_participants([participant_id])
 
     assert statuses[participant_id] == "archived"
+
+
+def test_a_recorded_question_keeps_the_answer_that_produced_it(
+    db_session: Session,
+) -> None:
+    participant = create_account(db_session, participant_code="P-ANS")
+    first = Scorecard()
+    first.record("A1", "negative", "아니요", "명확히 아니라고 답함")
+    engine = ScriptedEngine(
+        engine_result("첫 질문입니다."),
+        engine_result("다음 질문입니다.", scorecard=first.to_dict()),
+    )
+    service = InterviewService(db_session, engine=engine, clock=lambda: NOW)
+    interview = asyncio.run(service.start(participant.id))
+    asyncio.run(
+        service.submit_turn(
+            participant_id=participant.id,
+            interview_id=interview.id,
+            client_turn_id=uuid4(),
+            content="아니요, 그렇지 않습니다",
+        )
+    )
+
+    reloaded = service.get_for_admin(interview.id)
+    a1 = next(item for item in reloaded.scorecard_items if item.question_id == "A1")
+    untouched = next(item for item in reloaded.scorecard_items if item.question_id == "A2")
+
+    assert a1.answer_message is not None
+    assert a1.answer_message.content == "아니요, 그렇지 않습니다"
+    assert a1.answer_message.role == "user"
+    assert untouched.answer_message is None
+
+
+def test_marking_a_decision_wrong_needs_no_rationale(db_session: Session) -> None:
+    participant = create_account(db_session, participant_code="P-FAST")
+    admin = create_account(db_session, role=Role.ADMIN.value, participant_code=None)
+    updated = Scorecard()
+    updated.record("A1", "positive", "예", "그렇다고 답함")
+    engine = ScriptedEngine(
+        engine_result("첫 질문입니다."),
+        engine_result("다음 질문입니다.", scorecard=updated.to_dict()),
+    )
+    service = InterviewService(db_session, engine=engine, clock=lambda: NOW)
+    interview = asyncio.run(service.start(participant.id))
+    asyncio.run(
+        service.submit_turn(
+            participant_id=participant.id,
+            interview_id=interview.id,
+            client_turn_id=uuid4(),
+            content="답변",
+        )
+    )
+    admin_id = admin.id
+    interview_id = interview.id
+
+    reviewed = service.review_scorecard(
+        reviewer_user_id=admin_id,
+        interview_id=interview_id,
+        question_id="A1",
+        action="override",
+        expert_status="negative",
+    )
+
+    a1 = next(item for item in reviewed.scorecard_items if item.question_id == "A1")
+    assert a1.expert_review is not None
+    assert a1.expert_review.expert_status == "negative"
+    assert a1.expert_review.rationale is None
+
+    # the rule that protects the instrument still holds
+    with pytest.raises(InvalidReview):
+        service.review_scorecard(
+            reviewer_user_id=admin_id,
+            interview_id=interview_id,
+            question_id="A1",
+            action="override",
+            expert_status="positive",
+        )

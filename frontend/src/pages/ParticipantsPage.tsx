@@ -1,9 +1,10 @@
-import { AlertCircle, Ban, CircleCheck, CircleOff, Clock3, KeyRound, LockKeyhole, LockOpen, Search, UserPlus } from 'lucide-react'
+import { AlertCircle, Ban, CircleCheck, CircleOff, Clock3, Download, KeyRound, LockKeyhole, LockOpen, Search, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '@/app/api-context'
 import type { ParticipantRecord } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -56,6 +57,9 @@ export function ParticipantsPage() {
   const api = useApi()
   const [participants, setParticipants] = useState<ParticipantRecord[]>([])
   const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState<string[]>([])
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   const [dialog, setDialog] = useState<DialogState>(null)
   const [participantToDisable, setParticipantToDisable] = useState<ParticipantRecord | null>(null)
@@ -104,6 +108,44 @@ export function ParticipantsPage() {
     )
   }, [participants, query])
 
+  const allSelected = visibleParticipants.length > 0
+    && visibleParticipants.every((participant) => selected.includes(participant.id))
+
+  function toggle(id: string): void {
+    setSelected((current) => (
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
+    ))
+  }
+
+  function toggleAll(): void {
+    setSelected(allSelected ? [] : visibleParticipants.map((participant) => participant.id))
+  }
+
+  async function exportCsv(): Promise<void> {
+    if (exporting) return
+    if (typeof URL?.createObjectURL !== 'function') {
+      setExportError('CSV를 다운로드할 수 없습니다')
+      return
+    }
+    setExporting(true)
+    setExportError(null)
+    try {
+      const blob = await api.exportInterviewsCsv({ participantIds: selected })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = selected.length ? 'participants-selected.csv' : 'participants-all.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      setExportError('CSV를 다운로드하지 못했습니다')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   function updateParticipant(updated: ParticipantRecord): void {
     if (!mounted.current) return
     operation.current += 1
@@ -144,6 +186,34 @@ export function ParticipantsPage() {
     setDisableError(null)
   }
 
+  async function enableParticipant(participant: ParticipantRecord): Promise<void> {
+    if (unlockRequests.current.has(participant.id)) return
+    const request = Symbol('participant-enable')
+    unlockRequests.current.set(participant.id, request)
+    setUnlockError(null)
+    setUnlockingIds((current) => new Set(current).add(participant.id))
+    try {
+      const updated = await api.enableParticipant(participant.id)
+      if (!mounted.current || unlockRequests.current.get(participant.id) !== request) return
+      updateParticipant(updated)
+    } catch {
+      if (mounted.current && unlockRequests.current.get(participant.id) === request) {
+        setUnlockError('참여자를 활성화하지 못했습니다')
+      }
+    } finally {
+      if (unlockRequests.current.get(participant.id) === request) {
+        unlockRequests.current.delete(participant.id)
+        if (mounted.current) {
+          setUnlockingIds((current) => {
+            const next = new Set(current)
+            next.delete(participant.id)
+            return next
+          })
+        }
+      }
+    }
+  }
+
   async function unlockParticipant(participant: ParticipantRecord): Promise<void> {
     if (unlockRequests.current.has(participant.id)) return
     const request = Symbol('participant-unlock')
@@ -173,7 +243,7 @@ export function ParticipantsPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-6">
+    <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold">참여자</h1>
         <div className="relative min-w-0 flex-1 basis-48">
@@ -187,12 +257,24 @@ export function ParticipantsPage() {
             value={query}
           />
         </div>
+        <Button
+          aria-busy={exporting}
+          className="h-auto min-h-9 whitespace-normal text-center"
+          disabled={exporting || visibleParticipants.length === 0}
+          onClick={() => void exportCsv()}
+          type="button"
+          variant="outline"
+        >
+          <Download aria-hidden="true" />
+          {selected.length ? `선택 ${selected.length}명 CSV 다운로드` : '전체 CSV 다운로드'}
+        </Button>
         <Button className="h-auto min-h-9 whitespace-normal text-center" onClick={() => setDialog({ mode: 'create' })} type="button">
           <UserPlus aria-hidden="true" />
           계정 생성
         </Button>
       </div>
 
+      {exportError && <p className="mt-6 inline-flex items-center gap-2" role="alert"><AlertCircle aria-hidden="true" className="size-4" />{exportError}</p>}
       {phase === 'loading' && <p className="mt-6" role="status">참여자를 불러오는 중</p>}
       {unlockError && <p className="mt-6 inline-flex items-center gap-2" role="alert"><AlertCircle aria-hidden="true" className="size-4" />{unlockError}</p>}
       {phase === 'error' && (
@@ -202,9 +284,16 @@ export function ParticipantsPage() {
         </div>
       )}
       {phase === 'ready' && (
-        <Table className="mt-5">
+        <Table aria-label="참여자 목록" className="mt-5">
           <TableHeader className="hidden sm:table-header-group">
             <TableRow>
+              <TableHead>
+                <Checkbox
+                  aria-label="전체 선택"
+                  checked={allSelected}
+                  onCheckedChange={() => toggleAll()}
+                />
+              </TableHead>
               <TableHead>코드</TableHead>
               <TableHead>사용자 이름</TableHead>
               <TableHead>계정</TableHead>
@@ -215,6 +304,13 @@ export function ParticipantsPage() {
           <TableBody className="block sm:table-row-group">
             {visibleParticipants.map((participant) => (
               <TableRow className="block sm:table-row" key={participant.id}>
+                <TableCell className="block sm:table-cell">
+                  <Checkbox
+                    aria-label={`${participant.participantCode} 선택`}
+                    checked={selected.includes(participant.id)}
+                    onCheckedChange={() => toggle(participant.id)}
+                  />
+                </TableCell>
                 <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">코드:</span>{participant.participantCode}</TableCell>
                 <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">사용자:</span>{participant.username}</TableCell>
                 <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">계정:</span><AccountStatus status={participant.status} /></TableCell>
@@ -229,6 +325,20 @@ export function ParticipantsPage() {
                       <Button className="h-auto min-h-8 whitespace-normal" onClick={() => setParticipantToDisable(participant)} size="sm" type="button" variant="outline">
                         <Ban aria-hidden="true" />
                         비활성화
+                      </Button>
+                    )}
+                    {participant.status === 'disabled' && (
+                      <Button
+                        aria-busy={unlockingIds.has(participant.id)}
+                        className="h-auto min-h-8 whitespace-normal"
+                        disabled={unlockingIds.has(participant.id)}
+                        onClick={() => void enableParticipant(participant)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <CircleCheck aria-hidden="true" />
+                        활성화
                       </Button>
                     )}
                     {participant.status === 'admin_locked' && (

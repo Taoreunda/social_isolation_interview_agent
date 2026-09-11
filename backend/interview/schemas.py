@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from auth.policy import Role
 from auth.schemas import ApiSchema
 from interview.models import Interview
 from pydantic import Field, model_validator
@@ -54,6 +53,7 @@ class InterviewListItemResponse(ApiSchema):
 class ScorecardRowResponse(ApiSchema):
     question_id: str
     question: str
+    answer: str | None
     value: str | None
     rationale: str | None
     ai_status: ScoreDecision | None
@@ -64,6 +64,16 @@ class ScorecardRowResponse(ApiSchema):
 class InterviewDetailResponse(InterviewListItemResponse):
     messages: list[InterviewMessageResponse]
     scorecard: list[ScorecardRowResponse]
+    final_diagnosis: str | None
+    criteria: dict[str, bool | None]
+    report: str | None
+    algorithm_version: str
+    completed_at: datetime | None
+
+
+class ExportInterviewsRequest(ApiSchema):
+    interview_ids: list[UUID] = Field(default_factory=list)
+    participant_ids: list[UUID] = Field(default_factory=list)
 
 
 class ReviewScorecardRequest(ApiSchema):
@@ -90,21 +100,13 @@ def participant_response(interview: Interview) -> ParticipantInterviewResponse:
     )
 
 
-def subject_label(interview: Interview) -> str:
-    """Name the interview subject: a participant code, or a labelled administrator."""
-    account = interview.participant
-    if account.role == Role.ADMIN.value:
-        return f"관리자 ({account.display_username})"
-    return account.participant_code or ""
-
-
 def admin_list_response(
     interview: Interview,
     review_status: ReviewStatus,
 ) -> InterviewListItemResponse:
     return InterviewListItemResponse(
         id=interview.id,
-        participant_code=subject_label(interview),
+        participant_code=interview.subject_label,
         status=interview.status,
         progress=interview.progress,
         review_status=review_status,
@@ -119,6 +121,11 @@ def admin_detail_response(
     base = admin_list_response(interview, review_status)
     return InterviewDetailResponse(
         **base.model_dump(),
+        final_diagnosis=interview.final_diagnosis,
+        criteria=interview.criteria or {},
+        report=interview.report,
+        algorithm_version=interview.algorithm_version,
+        completed_at=interview.completed_at,
         messages=[
             InterviewMessageResponse(
                 id=message.id,
@@ -132,6 +139,7 @@ def admin_detail_response(
             ScorecardRowResponse(
                 question_id=item.question_id,
                 question=item.question,
+                answer=item.answer_message.content if item.answer_message else None,
                 value=item.value,
                 rationale=item.rationale,
                 ai_status=item.ai_status,

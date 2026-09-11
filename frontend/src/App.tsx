@@ -9,6 +9,7 @@ import { ParticipantLayout } from '@/layouts/ParticipantLayout'
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage'
 import { InterviewPage } from '@/pages/InterviewPage'
 import { InterviewReviewPage } from '@/pages/InterviewReviewPage'
+import { InterviewTranscriptPage } from '@/pages/InterviewTranscriptPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { ParticipantsPage } from '@/pages/ParticipantsPage'
 import { PasswordPage } from '@/pages/PasswordPage'
@@ -34,6 +35,7 @@ export function AppRoutes() {
         <Route path="/admin/interview" element={<InterviewPage />} />
         <Route path="/admin/participants" element={<ParticipantsPage />} />
         <Route path="/admin/interviews/:interviewId" element={<InterviewReviewPage />} />
+        <Route path="/admin/interviews/:interviewId/transcript" element={<InterviewTranscriptPage />} />
       </Route>
       <Route path="*" element={<DefaultRoute />} />
     </Routes>

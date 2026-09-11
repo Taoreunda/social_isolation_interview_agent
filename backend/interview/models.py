@@ -53,6 +53,14 @@ class Interview(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    @property
+    def subject_label(self) -> str:
+        """Name the subject: a participant code, or a labelled administrator."""
+        account = self.participant
+        if account.role == "admin":
+            return f"관리자 ({account.display_username})"
+        return account.participant_code or ""
+
     participant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("user_accounts.id", ondelete="RESTRICT"),
@@ -199,6 +207,14 @@ class ScorecardItem(Base):
     ai_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("interview_messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    answer_message: Mapped[InterviewMessage | None] = relationship(
+        "InterviewMessage",
+        lazy="joined",
+    )
     clarification_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )

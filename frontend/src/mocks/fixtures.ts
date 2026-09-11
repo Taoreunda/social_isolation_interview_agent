@@ -53,6 +53,11 @@ const participantInterview: MockInterviewFixture = {
   progress: 50,
   reviewStatus: 'unreviewed',
   updatedAt: '2026-08-25T09:00:00.000Z',
+  finalDiagnosis: null,
+  criteria: { A: null, B: null, C: null, D: null },
+  report: null,
+  algorithmVersion: 'react-scorecard-v1',
+  completedAt: null,
   messages: [
     {
       id: 'message-001',
@@ -64,6 +69,7 @@ const participantInterview: MockInterviewFixture = {
   scorecard: [
     {
       questionId: 'q1',
+      answer: '거의 매일 집에만 있었어요',
       question: '최근 한 달간 혼자 지내는 시간이 얼마나 되었나요?',
       value: '하루 대부분',
       rationale: '응답에서 혼자 지내는 시간이 길다고 언급했습니다.',
@@ -73,6 +79,7 @@ const participantInterview: MockInterviewFixture = {
     },
     {
       questionId: 'q2',
+      answer: '한 명 정도 있습니다',
       question: '도움을 요청할 수 있는 사람이 있나요?',
       value: '한 명 있습니다',
       rationale: '도움을 요청할 수 있는 지인을 한 명 언급했습니다.',

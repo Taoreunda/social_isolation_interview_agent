@@ -57,7 +57,7 @@ Migration `20260905_0002`:
 - `scorecard_items`: 문항 순서·텍스트, AI 상태·값·근거, clarification 횟수와 평가 시각
 - `expert_reviews`: 문항별 최신 연구자 동의/변경 결과
 
-UUID와 UTC timezone-aware timestamp를 사용합니다. partial unique index가 참여자당 활성 인터뷰 하나를 보장하고, `(interview_id, client_turn_id, role)`이 turn 재전송의 중복 메시지를 막습니다. 상태·진행률·문항 상태는 database check constraint로 제한합니다.
+UUID와 UTC timezone-aware timestamp를 사용합니다. partial unique index가 참여자당 활성 인터뷰 하나를 보장하고(완료한 인터뷰를 관리자가 보관하면 새 인터뷰를 시작할 수 있습니다), `(interview_id, client_turn_id, role)`이 turn 재전송의 중복 메시지를 막습니다. 상태·진행률·문항 상태는 database check constraint로 제한합니다.
 
 ## 인터뷰 turn
 
@@ -85,7 +85,11 @@ LLM 실패는 이전 커밋을 보존합니다. 서버 재시작 후에도 마�
 - `GET /api/admin/interviews`
 - `GET /api/admin/interviews/{interview_id}`
 - `POST /api/admin/interviews/{interview_id}/scorecard/{question_id}`
+- `POST /api/admin/interviews/{interview_id}/archive`
+- `POST /api/admin/interviews/csv` (전체 또는 선택한 인터뷰)
 - `POST /api/admin/interviews/{interview_id}/csv`
+
+관리자 상세 응답은 진단, 기준 충족 여부, 요약, 알고리즘 버전과 완료 시각을 포함합니다. 참여자 응답에는 포함하지 않습니다. CSV는 이 값들을 문항 행마다 함께 담습니다.
 
 오류 의미는 `401` 인증 실패, `403` 역할·CSRF·origin 실패, `404` 보이지 않거나 없는 resource, `409` 상태/동시성 충돌, `503` DB·모델 dependency 실패입니다. 외부 exception 세부 정보는 응답에 포함하지 않습니다. CSV의 외부 유래 문자열은 spreadsheet formula 실행을 막도록 escape하며 export audit event를 남깁니다.
 
@@ -98,6 +102,5 @@ React의 `HttpAppApi`가 기본 구현입니다. 현재 인터뷰가 없다는 `
 - 응답 방식: turn 완료 후 JSON; 부분 token streaming과 중단된 생성 복구는 미지원
 - 데이터베이스: PostgreSQL만 지원; SQLite/JSON fallback 없음
 - 계정: 공개 가입, 소셜 로그인, 이메일 인증/복구 없음
-- 연구 관리: 인터뷰 archive 전환 UI/API는 아직 없음
 
 AWS에서는 RDS 암호화, 자동 backup, 삭제 방지, private subnet, 최소 권한 security group, Secrets Manager/Parameter Store와 검증된 TLS를 사용합니다. FastAPI 구조화 로그는 CloudWatch Logs로 수집하되 메시지, 진단, 판단 근거, 비밀번호와 token을 기록하지 않습니다. LangSmith는 기본 비활성화하며 실제 연구 데이터 추적은 별도 승인 뒤에만 사용합니다.

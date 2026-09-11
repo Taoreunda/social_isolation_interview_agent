@@ -24,7 +24,7 @@ function Decision({ value }: { value: ScoreDecision | null }) {
         ? FileText
         : Circle
 
-  return <span className="inline-flex items-center gap-1"><Icon aria-hidden="true" className="size-4" data-testid="decision-icon" />{label}</span>
+  return <span className="inline-flex items-center gap-1 whitespace-nowrap"><Icon aria-hidden="true" className="size-4" data-testid="decision-icon" />{label}</span>
 }
 
 function MobileLabel({ children }: { children: string }) {
@@ -39,7 +39,6 @@ interface ScorecardReviewProps {
 
 export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardReviewProps) {
   const [selected, setSelected] = useState<ScorecardRow | null>(null)
-  const [decision, setDecision] = useState<Exclude<ScoreDecision, 'recorded'> | null>(null)
   const [rationale, setRationale] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -58,7 +57,6 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
   function clearDialog(): void {
     dialogGeneration.current += 1
     setSelected(null)
-    setDecision(null)
     setRationale('')
     setError(null)
   }
@@ -91,19 +89,15 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
     }
   }
 
-  function submitOverride(): void {
-    if (!selected || !decision) return
-    const trimmed = rationale.trim()
-    if (!trimmed) {
-      setError('근거를 입력하세요')
-      return
-    }
+  function submitRationale(): void {
+    if (!selected || !selected.expertStatus) return
+    const agreed = selected.expertStatus === selected.aiStatus
     void submit({
       interviewId,
       questionId: selected.questionId,
-      action: 'override',
-      expertStatus: decision,
-      rationale: trimmed,
+      action: agreed ? 'approve' : 'override',
+      ...(agreed ? {} : { expertStatus: selected.expertStatus as Exclude<ScoreDecision, 'recorded'> }),
+      rationale: rationale.trim(),
     }, true)
   }
 
@@ -114,11 +108,12 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
     <Table aria-label="점수표">
       <TableHeader className="sr-only sm:not-sr-only sm:table-header-group">
         <TableRow>
-          <TableHead>문항</TableHead>
-          <TableHead>값</TableHead>
-          <TableHead>AI 판정</TableHead>
-          <TableHead>전문가 판정</TableHead>
-          <TableHead>작업</TableHead>
+          <TableHead className="w-[23%]">문항</TableHead>
+          <TableHead className="w-[20%]">답변</TableHead>
+          <TableHead className="w-[15%]">값</TableHead>
+          <TableHead className="w-[18%]">AI 판정</TableHead>
+          <TableHead className="w-[12%]">전문가 판정</TableHead>
+          <TableHead className="w-[12%]">작업</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody className="block sm:table-row-group">
@@ -129,19 +124,25 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
             <span className="ml-2 break-words text-muted-foreground">{row.question}</span>
           </TableCell>
           <TableCell className="block break-words whitespace-normal sm:table-cell">
-            <MobileLabel>값:</MobileLabel>{row.value ?? '없음'}
+            <MobileLabel>답변:</MobileLabel>
+            {row.answer ?? <span className="text-muted-foreground">기록 없음</span>}
+          </TableCell>
+          <TableCell className="block break-words whitespace-normal sm:table-cell">
+            <MobileLabel>값:</MobileLabel><span>{row.value ?? '없음'}</span>
           </TableCell>
           <TableCell className="block break-words whitespace-normal sm:table-cell">
             <MobileLabel>AI:</MobileLabel><Decision value={row.aiStatus} />
+            {row.rationale && <span className="mt-1 block text-sm text-muted-foreground">{row.rationale}</span>}
           </TableCell>
           <TableCell className="block break-words whitespace-normal sm:table-cell">
             <MobileLabel>전문가:</MobileLabel><Decision value={row.expertStatus} />
+            {row.expertRationale && <span className="mt-1 block text-sm text-muted-foreground">{row.expertRationale}</span>}
           </TableCell>
           <TableCell className="block break-words whitespace-normal sm:table-cell">
             <MobileLabel>작업:</MobileLabel>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2">
               <Button
-                aria-label={`${row.questionId} 동의`}
+                aria-label={`${row.questionId} 맞음`}
                 className={actionClass}
                 disabled={busy || row.aiStatus === null}
                 onClick={() => void submit({ interviewId, questionId: row.questionId, action: 'approve' }, false)}
@@ -149,22 +150,38 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
                 type="button"
                 variant="outline"
               >
-                동의
+                맞음
               </Button>
               <Button
-                aria-label={`${row.questionId} 변경`}
+                aria-label={`${row.questionId} 틀림`}
                 className={actionClass}
                 disabled={busy || row.aiStatus === null || row.aiStatus === 'recorded'}
+                onClick={() => void submit({
+                  interviewId,
+                  questionId: row.questionId,
+                  action: 'override',
+                  expertStatus: row.aiStatus === 'positive' ? 'negative' : 'positive',
+                }, false)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                틀림
+              </Button>
+              <Button
+                aria-label={`${row.questionId} 근거`}
+                className={actionClass}
+                disabled={busy || row.expertStatus === null}
                 onClick={() => {
                   setSelected(row)
-                  setDecision(row.aiStatus === 'positive' ? 'negative' : row.aiStatus === 'negative' ? 'positive' : null)
+                  setRationale(row.expertRationale ?? '')
                   setError(null)
                 }}
                 size="sm"
                 type="button"
                 variant="outline"
               >
-                변경
+                근거
               </Button>
             </div>
           </TableCell>
@@ -176,28 +193,15 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
     </p>}
     <Dialog onOpenChange={(open) => !open && clearDialog()} open={Boolean(selected)}>
       <DialogContent>
-        <DialogHeader><DialogTitle>판정 변경</DialogTitle></DialogHeader>
-        <fieldset className="grid gap-2" disabled={busy}>
-          <legend className="text-sm font-medium">판정</legend>
-          <label className="flex min-h-11 items-center gap-2 sm:min-h-0">
-            <input checked={decision === 'positive'} name="decision" onChange={() => setDecision('positive')} type="radio" />
-            긍정
-          </label>
-          <label className="flex min-h-11 items-center gap-2 sm:min-h-0">
-            <input checked={decision === 'negative'} name="decision" onChange={() => setDecision('negative')} type="radio" />
-            부정
-          </label>
-        </fieldset>
+        <DialogHeader><DialogTitle>판정 근거</DialogTitle></DialogHeader>
         <div className="grid gap-2">
           <Label htmlFor="review-rationale">근거</Label>
           <Textarea
             aria-describedby={error ? errorId : undefined}
             aria-invalid={Boolean(error)}
-            aria-required="true"
             disabled={busy}
             id="review-rationale"
             onChange={(event) => setRationale(event.target.value)}
-            required
             value={rationale}
           />
           {error && <p className="inline-flex items-center gap-2" id={errorId} role="alert">
@@ -206,7 +210,7 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
         </div>
         <DialogFooter>
           <Button disabled={busy} onClick={clearDialog} type="button" variant="outline">취소</Button>
-          <Button aria-busy={busy} disabled={busy || !decision} onClick={submitOverride} type="button">저장</Button>
+          <Button aria-busy={busy} disabled={busy} onClick={submitRationale} type="button">저장</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

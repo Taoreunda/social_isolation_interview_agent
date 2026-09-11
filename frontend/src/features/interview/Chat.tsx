@@ -85,7 +85,7 @@ export function Chat({
         <Button
           aria-busy={isSending}
           aria-label={submitLabel}
-          disabled={isSending}
+          disabled={isSending || (!retrying && !answer.trim())}
           size={retrying ? 'default' : 'icon'}
           type="submit"
         >

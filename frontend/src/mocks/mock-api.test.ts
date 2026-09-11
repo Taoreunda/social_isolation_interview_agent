@@ -239,7 +239,7 @@ describe('MockAppApi', () => {
     const api = new MockAppApi()
     await api.login(adminLogin)
 
-    const created = await api.createParticipant({
+    const { participant: created } = await api.createParticipant({
       username: 'participant02',
       participantCode: 'P-002',
       password: 'temporary123!',
@@ -278,7 +278,7 @@ describe('MockAppApi', () => {
     const api = new MockAppApi()
     await api.login(adminLogin)
     const createdPassword = 'created-password-123!'
-    const created = await api.createParticipant({
+    const { participant: created } = await api.createParticipant({
       username: 'participant02',
       participantCode: 'P-002',
       password: createdPassword,
@@ -389,6 +389,7 @@ describe('MockAppApi', () => {
     const seed = createMockFixtureState()
     seed.interviews[0].scorecard.push({
       questionId: 'q3',
+      answer: null,
       question: 'AI 판정이 없는 문항',
       value: null,
       rationale: null,
@@ -436,9 +437,9 @@ describe('MockAppApi', () => {
 
     expect(second).toBe(first)
     expect(first).toBe(
-      'interviewId,participantCode,status,progress,reviewStatus,questionId,question,value,aiStatus,expertStatus,expertRationale\n' +
-      'interview-001,P-001,active,50,unreviewed,q1,최근 한 달간 혼자 지내는 시간이 얼마나 되었나요?,하루 대부분,positive,,\n' +
-      'interview-001,P-001,active,50,unreviewed,q2,도움을 요청할 수 있는 사람이 있나요?,한 명 있습니다,recorded,,'
+      'interviewId,participantCode,status,progress,reviewStatus,finalDiagnosis,criteriaA,criteriaB,criteriaC,criteriaD,completedAt,algorithmVersion,report,questionId,question,value,aiStatus,expertStatus,expertRationale\n' +
+      'interview-001,P-001,active,50,unreviewed,,,,,,,react-scorecard-v1,,q1,최근 한 달간 혼자 지내는 시간이 얼마나 되었나요?,하루 대부분,positive,,\n' +
+      'interview-001,P-001,active,50,unreviewed,,,,,,,react-scorecard-v1,,q2,도움을 요청할 수 있는 사람이 있나요?,한 명 있습니다,recorded,,'
     )
   })
 })

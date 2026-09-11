@@ -1,10 +1,11 @@
-import { AlertCircle, CircleCheck, Clock3, FileSearch, FileText, MessageSquare, RefreshCw } from 'lucide-react'
+import { AlertCircle, CircleCheck, Clock3, Download, FileText, MessageSquare, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { useApi } from '@/app/api-context'
 import type { InterviewListItem } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 function MobileLabel({ children }: { children: string }) {
@@ -25,6 +26,10 @@ function ReviewState({ status }: { status: InterviewListItem['reviewStatus'] }) 
 
 export function AdminDashboardPage() {
   const api = useApi()
+  const navigate = useNavigate()
+  const [selected, setSelected] = useState<string[]>([])
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const [items, setItems] = useState<InterviewListItem[]>([])
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   const mounted = useRef(false)
@@ -63,12 +68,12 @@ export function AdminDashboardPage() {
   ] as const
 
   if (phase === 'loading') {
-    return <main className="mx-auto w-full max-w-6xl px-4 py-6"><p role="status">인터뷰를 불러오는 중</p></main>
+    return <main className="mx-auto w-full max-w-[96rem] px-4 py-6"><p role="status">인터뷰를 불러오는 중</p></main>
   }
 
   if (phase === 'error') {
     return (
-      <main className="mx-auto w-full max-w-6xl px-4 py-6">
+      <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
         <p className="inline-flex items-center gap-2" role="alert">
           <AlertCircle aria-hidden="true" className="size-4" />
           인터뷰를 불러오지 못했습니다
@@ -81,16 +86,67 @@ export function AdminDashboardPage() {
     )
   }
 
+  const allSelected = items.length > 0 && items.every((item) => selected.includes(item.id))
+
+  function toggleAll(): void {
+    setSelected(allSelected ? [] : items.map((item) => item.id))
+  }
+
+  function toggle(id: string): void {
+    setSelected((current) => (
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
+    ))
+  }
+
+  async function exportCsv(): Promise<void> {
+    if (exporting) return
+    if (typeof URL?.createObjectURL !== 'function') {
+      setExportError('CSV를 다운로드할 수 없습니다')
+      return
+    }
+    setExporting(true)
+    setExportError(null)
+    try {
+      const blob = await api.exportInterviewsCsv({ interviewIds: selected })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = selected.length ? 'interviews-selected.csv' : 'interviews-all.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      setExportError('CSV를 다운로드하지 못했습니다')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const exportLabel = selected.length ? `선택 ${selected.length}건 CSV 다운로드` : '전체 CSV 다운로드'
+
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-6">
+    <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">검토</h1>
-        <Link
-          className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9"
-          to="/admin/interview"
-        >
-          <MessageSquare aria-hidden="true" className="size-4" />인터뷰 해보기
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            aria-busy={exporting}
+            className="min-h-11 sm:min-h-9"
+            disabled={exporting || items.length === 0}
+            onClick={() => void exportCsv()}
+            type="button"
+            variant="outline"
+          >
+            <Download aria-hidden="true" />{exportLabel}
+          </Button>
+          <Link
+            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9"
+            to="/admin/interview"
+          >
+            <MessageSquare aria-hidden="true" className="size-4" />인터뷰 해보기
+          </Link>
+        </div>
       </div>
       <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-border py-4 sm:grid-cols-4">
         {metrics.map(([label, value]) => (
@@ -100,26 +156,52 @@ export function AdminDashboardPage() {
           </div>
         ))}
       </dl>
+      {exportError && <p className="mt-3 inline-flex items-center gap-2" role="alert">
+        <AlertCircle aria-hidden="true" className="size-4" />{exportError}
+      </p>}
       {items.length === 0 ? (
         <p className="mt-6 text-muted-foreground">인터뷰가 없습니다</p>
       ) : (
         <Table aria-label="인터뷰 대기열" className="mt-5">
           <TableHeader className="sr-only sm:not-sr-only sm:table-header-group">
             <TableRow>
+              <TableHead>
+                <Checkbox
+                  aria-label="전체 선택"
+                  checked={allSelected}
+                  onCheckedChange={() => toggleAll()}
+                />
+              </TableHead>
               <TableHead>참여자 코드</TableHead>
               <TableHead>진행률</TableHead>
               <TableHead>인터뷰 상태</TableHead>
               <TableHead>검토 상태</TableHead>
               <TableHead>수정 시각</TableHead>
-              <TableHead><span className="sr-only">작업</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="block sm:table-row-group">
             {items.map((item) => (
-              <TableRow className="block sm:table-row" key={item.id}>
+              <TableRow
+                className="block cursor-pointer hover:bg-accent sm:table-row"
+                key={item.id}
+                onClick={() => navigate(`/admin/interviews/${item.id}`)}
+              >
+                <TableCell className="block sm:table-cell" onClick={(event) => event.stopPropagation()}>
+                  <Checkbox
+                    aria-label={`${item.participantCode} 선택`}
+                    checked={selected.includes(item.id)}
+                    onCheckedChange={() => toggle(item.id)}
+                  />
+                </TableCell>
                 <TableCell className="block break-words whitespace-normal sm:table-cell">
                   <MobileLabel>참여자 코드:</MobileLabel>
-                  {item.participantCode}
+                  <Link
+                    aria-label={`${item.participantCode} 인터뷰 검토`}
+                    className="font-medium text-foreground underline underline-offset-4"
+                    to={`/admin/interviews/${item.id}`}
+                  >
+                    {item.participantCode}
+                  </Link>
                 </TableCell>
                 <TableCell className="block sm:table-cell">
                   <MobileLabel>진행률:</MobileLabel>
@@ -136,17 +218,6 @@ export function AdminDashboardPage() {
                 <TableCell className="block sm:table-cell">
                   <MobileLabel>수정 시각:</MobileLabel>
                   {new Date(item.updatedAt).toLocaleString('ko-KR')}
-                </TableCell>
-                <TableCell className="block sm:table-cell">
-                  <MobileLabel>작업:</MobileLabel>
-                  <Link
-                    aria-label={`${item.participantCode} 인터뷰 검토`}
-                    className="inline-flex min-h-11 items-center gap-1 font-medium underline underline-offset-4 sm:min-h-8"
-                    to={`/admin/interviews/${item.id}`}
-                  >
-                    <FileSearch aria-hidden="true" className="size-4" />
-                    <span>검토</span>
-                  </Link>
                 </TableCell>
               </TableRow>
             ))}

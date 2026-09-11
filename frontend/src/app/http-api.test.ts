@@ -176,11 +176,14 @@ describe('HttpAppApi participant administration', () => {
       participantCode: 'P-002',
       password: 'assigned-password',
     })).resolves.toEqual({
-      id: 'participant-002',
-      username: 'participant02',
-      participantCode: 'P-002',
-      status: 'active',
-      interviewStatus: 'not_started',
+      participant: {
+        id: 'participant-002',
+        username: 'participant02',
+        participantCode: 'P-002',
+        status: 'active',
+        interviewStatus: 'not_started',
+      },
+      assignedPassword: null,
     })
 
     const [url, init] = fetcher.mock.calls[0]

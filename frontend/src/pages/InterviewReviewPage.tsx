@@ -1,8 +1,9 @@
-import { AlertCircle, Download, RefreshCw } from 'lucide-react'
+import { AlertCircle, Archive, Download, MessagesSquare, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 
 import { useApi } from '@/app/api-context'
+import { hasApiStatus } from '@/app/api-error'
 import type { InterviewDetail, ReviewScorecardInput } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { ScorecardReview } from '@/features/admin/ScorecardReview'
@@ -28,12 +29,17 @@ function csvName(code: string): string {
   return `${safeCode || 'interview'}.csv`
 }
 
+function criterionLabel(key: string, met: boolean | null): string {
+  return `${key} ${met === null ? '미평가' : met ? '충족' : '미충족'}`
+}
+
 export function InterviewReviewPage() {
   const api = useApi()
   const { interviewId = '' } = useParams()
   const [detail, setDetail] = useState<InterviewDetail | null>(null)
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error' | 'missing'>('loading')
   const [exportError, setExportError] = useState<string | null>(null)
+  const [archiving, setArchiving] = useState(false)
   const [exporting, setExporting] = useState(false)
   const mounted = useRef(false)
   const routeGeneration = useRef(0)
@@ -71,9 +77,9 @@ export function InterviewReviewPage() {
       if (!isCurrentVisit(request) || loadRequest.current !== request) return
       setDetail(loaded)
       setPhase('ready')
-    } catch {
+    } catch (error) {
       if (isCurrentVisit(request) && loadRequest.current === request) {
-        setPhase('error')
+        setPhase(hasApiStatus(error, 404) ? 'missing' : 'error')
       }
     }
   }, [api, isCurrentVisit])
@@ -116,6 +122,21 @@ export function InterviewReviewPage() {
       return true
     } finally {
       if (reviewLocks.current.get(key) === request) reviewLocks.current.delete(key)
+    }
+  }
+
+  async function archive(): Promise<void> {
+    if (!detail || archiving) return
+    setArchiving(true)
+    setExportError(null)
+    try {
+      const updated = await api.archiveInterview(detail.id)
+      if (!mounted.current) return
+      setDetail(updated)
+    } catch {
+      if (mounted.current) setExportError('인터뷰를 보관하지 못했습니다')
+    } finally {
+      if (mounted.current) setArchiving(false)
     }
   }
 
@@ -176,12 +197,25 @@ export function InterviewReviewPage() {
   }
 
   if (phase === 'loading') {
-    return <main aria-busy="true" className="mx-auto w-full max-w-6xl px-4 py-6">
+    return <main aria-busy="true" className="mx-auto w-full max-w-[96rem] px-4 py-6">
       <p role="status">인터뷰를 불러오는 중</p>
     </main>
   }
+  if (phase === 'missing') {
+    return <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
+      <p className="inline-flex items-center gap-2" role="alert">
+        <AlertCircle aria-hidden="true" className="size-4" />인터뷰를 찾을 수 없습니다
+      </p>
+      <Link
+        className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9"
+        to="/admin"
+      >
+        검토 목록
+      </Link>
+    </main>
+  }
   if (phase === 'error') {
-    return <main className="mx-auto w-full max-w-6xl px-4 py-6">
+    return <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
       <p className="inline-flex items-center gap-2" role="alert">
         <AlertCircle aria-hidden="true" className="size-4" />인터뷰를 불러오지 못했습니다
       </p>
@@ -192,15 +226,31 @@ export function InterviewReviewPage() {
   }
   if (!detail) return null
 
-  return <main className="mx-auto w-full max-w-6xl px-4 py-6">
+  return <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
     <div className="flex flex-wrap items-center gap-3">
       <div>
         <h1 className="text-xl font-semibold">인터뷰 검토</h1>
         <p className="mt-1 text-sm text-muted-foreground">{detail.participantCode}</p>
       </div>
+      {detail.status === 'completed' && <Button
+        aria-busy={archiving}
+        className="ml-auto min-h-11 sm:min-h-9"
+        disabled={archiving}
+        onClick={() => void archive()}
+        type="button"
+        variant="outline"
+      >
+        <Archive aria-hidden="true" />보관
+      </Button>}
+      <Link
+        className={`inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9 ${detail.status === 'completed' ? '' : 'ml-auto'}`}
+        to={`/admin/interviews/${detail.id}/transcript`}
+      >
+        <MessagesSquare aria-hidden="true" className="size-4" />대화 보기
+      </Link>
       <Button
         aria-busy={exporting}
-        className="ml-auto min-h-11 sm:min-h-9"
+        className={detail.status === 'completed' ? 'min-h-11 sm:min-h-9' : 'ml-auto min-h-11 sm:min-h-9'}
         disabled={exporting}
         onClick={() => void exportCsv()}
         type="button"
@@ -212,21 +262,32 @@ export function InterviewReviewPage() {
     {exportError && <p className="mt-3 inline-flex items-center gap-2" role="alert">
       <AlertCircle aria-hidden="true" className="size-4" />{exportError}
     </p>}
-    <div className="mt-6 grid gap-8 lg:grid-cols-2" data-testid="review-split">
-      <section aria-labelledby="transcript-heading">
-        <h2 className="text-lg font-semibold" id="transcript-heading">대화</h2>
-        <ol className="mt-3 divide-y divide-border border-y border-border">
-          {detail.messages.map((message) => <li className="py-3" key={message.id}>
-            <p className="text-sm font-medium">{message.role === 'user' ? '참여자' : '진행자'}</p>
-            <p
-              aria-label={message.role === 'user' ? '참여자 메시지' : '진행자 메시지'}
-              className="mt-1 whitespace-pre-wrap break-words"
-            >
-              {message.content}
-            </p>
-          </li>)}
-        </ol>
-      </section>
+    <section aria-labelledby="outcome-heading" className="mt-6 border-y border-border py-4">
+      <h2 className="sr-only" id="outcome-heading">판정 결과</h2>
+      <dl className="grid gap-3 sm:grid-cols-3">
+        <div>
+          <dt className="text-sm text-muted-foreground">진단</dt>
+          <dd className="font-semibold">{detail.finalDiagnosis ?? '미산출'}</dd>
+        </div>
+        <div>
+          <dt className="text-sm text-muted-foreground">기준</dt>
+          <dd className="flex flex-wrap gap-x-3 gap-y-1">
+            {['A', 'B', 'C', 'D'].map((key) => (
+              <span key={key}>{criterionLabel(key, detail.criteria[key] ?? null)}</span>
+            ))}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-sm text-muted-foreground">완료</dt>
+          <dd>
+            {detail.completedAt ? new Date(detail.completedAt).toLocaleString('ko-KR') : '진행 중'}
+            <span className="ml-2 text-sm text-muted-foreground">{detail.algorithmVersion}</span>
+          </dd>
+        </div>
+      </dl>
+      {detail.report && <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6">{detail.report}</p>}
+    </section>
+    <div className="mt-6 grid gap-8" data-testid="review-split">
       <section aria-labelledby="scorecard-heading">
         <h2 className="text-lg font-semibold" id="scorecard-heading">점수표</h2>
         <div className="mt-3">
