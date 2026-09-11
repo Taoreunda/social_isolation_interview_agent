@@ -42,8 +42,8 @@ class ChangePasswordRequest(ApiSchema):
 
 
 class CreateParticipantRequest(ApiSchema):
-    username: str
-    participant_code: str
+    username: str | None = None
+    participant_code: str | None = None
     password: str | None = None
     generate_password: bool = False
 

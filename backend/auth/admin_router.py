@@ -30,7 +30,7 @@ from auth.schemas import (
     PasswordAssignmentResponse,
     ResetParticipantPasswordRequest,
 )
-from auth.security import generate_password
+from auth.security import generate_participant_password, generate_password
 from interview.service import InterviewService
 from sqlalchemy.orm import Session
 
@@ -93,7 +93,20 @@ def create_participant(
     identity: RequestIdentity = Depends(require_admin_csrf),
     service: AccountAdministrationService = Depends(get_account_administration_service),
 ) -> ParticipantCredentialResponse:
-    assigned_password = generate_password() if payload.generate_password else None
+    try:
+        participant_code = payload.participant_code or service.allocate_research_code()
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="필수 서비스를 사용할 수 없습니다.",
+        ) from exc
+    username = payload.username or participant_code.lower()
+
+    assigned_password = (
+        generate_participant_password(participant_code)
+        if payload.generate_password
+        else None
+    )
     password = assigned_password if assigned_password is not None else payload.password
     if password is None:
         raise HTTPException(
@@ -103,8 +116,8 @@ def create_participant(
     try:
         account = service.create_participant(
             actor_user_id=identity.context.account.id,
-            username=payload.username,
-            participant_code=payload.participant_code,
+            username=username,
+            participant_code=participant_code,
             password=password,
         )
     except PolicyViolation as exc:
@@ -140,7 +153,18 @@ def reset_participant_password(
     identity: RequestIdentity = Depends(require_admin_csrf),
     service: AccountAdministrationService = Depends(get_account_administration_service),
 ) -> PasswordAssignmentResponse:
-    assigned_password = generate_password() if payload.generate_password else None
+    assigned_password = None
+    if payload.generate_password:
+        try:
+            code = service.research_code_of(participant_id)
+        except SQLAlchemyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="필수 서비스를 사용할 수 없습니다.",
+            ) from exc
+        assigned_password = (
+            generate_participant_password(code) if code else generate_password()
+        )
     password = assigned_password if assigned_password is not None else payload.password
     if password is None:
         raise HTTPException(
@@ -184,6 +208,40 @@ def disable_participant(
             [participant_id]
         ).get(participant_id, "not_started")
         account = service.disable_participant(
+            actor_user_id=identity.context.account.id,
+            participant_id=participant_id,
+        )
+    except AccountNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="참여자를 찾을 수 없습니다.",
+        ) from exc
+    except AccountStateConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="현재 계정 상태에서는 수행할 수 없습니다.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="필수 서비스를 사용할 수 없습니다.",
+        ) from exc
+    return _participant_response(account, interview_status)
+
+
+@router.post("/{participant_id}/enable", response_model=ParticipantResponse)
+def enable_participant(
+    participant_id: UUID,
+    _origin: None = Depends(require_allowed_origin),
+    identity: RequestIdentity = Depends(require_admin_csrf),
+    service: AccountAdministrationService = Depends(get_account_administration_service),
+    interview_service: InterviewService = Depends(get_participant_status_service),
+) -> ParticipantResponse:
+    try:
+        interview_status = interview_service.statuses_for_participants(
+            [participant_id]
+        ).get(participant_id, "not_started")
+        account = service.enable_participant(
             actor_user_id=identity.context.account.id,
             participant_id=participant_id,
         )

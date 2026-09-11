@@ -61,6 +61,26 @@ class TokenService:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+_PASSWORD_TAIL = string.ascii_lowercase + string.digits
+MINIMUM_PASSWORD_LENGTH = 10
+
+
+def generate_participant_password(participant_code: str) -> str:
+    """Derive a readable one-time password from the research code.
+
+    The code makes the password easy to hand over; the random tail keeps it
+    from being guessable by anyone who merely knows the code.
+    """
+    prefix = participant_code.strip().lower()
+    tail_length = 4
+    while True:
+        tail = "".join(secrets.choice(_PASSWORD_TAIL) for _ in range(tail_length))
+        candidate = f"{prefix}-{tail}"
+        if len(candidate) >= MINIMUM_PASSWORD_LENGTH:
+            return candidate
+        tail_length += 1
+
+
 def generate_password(length: int = 20) -> str:
     """Generate a one-time administrator-assigned password of at least 16 chars."""
     if length < 16:
