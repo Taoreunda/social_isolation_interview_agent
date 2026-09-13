@@ -54,6 +54,7 @@ def _participant_response(
         participant_code=account.participant_code,
         status=account.status,
         interview_status=interview_status,
+        temporary_locked_until=account.temporary_locked_until,
     )
 
 

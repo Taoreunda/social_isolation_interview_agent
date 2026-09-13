@@ -448,6 +448,7 @@ def test_admin_creates_participant_with_one_time_generated_password(
         "participantCode": "P-002",
         "status": "active",
         "interviewStatus": "not_started",
+        "temporaryLockedUntil": None,
     }
     assigned_password = payload["assignedPassword"]
     assert len(assigned_password) >= 10
@@ -466,6 +467,36 @@ def test_admin_creates_participant_with_one_time_generated_password(
     assert event.actor_user_id == api_admin.id
     assert event.target_id == created.id
     assert event.details == {"role": "participant"}
+
+
+def test_the_participant_listing_shows_a_temporary_lock_deadline(
+    api_admin: UserAccount,
+    api_participant: UserAccount,
+    db_session: Session,
+) -> None:
+    """An administrator has to be able to see why a participant cannot log in."""
+    deadline = datetime(2026, 9, 4, 2, 15, tzinfo=UTC)
+    api_participant.failed_login_count = 5
+    api_participant.temporary_locked_until = deadline
+    db_session.commit()
+
+    with TestClient(api.app) as client:
+        login = client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_admin.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        assert login.status_code == 200
+
+        response = client.get("/api/admin/participants")
+
+    assert response.status_code == 200
+    row = response.json()[0]
+    assert row["status"] == "active", "the account itself is not administratively locked"
+    assert row["temporaryLockedUntil"] == deadline.isoformat().replace("+00:00", "Z")
 
 
 def test_admin_lists_participants_including_administrator_lock_state(
@@ -497,6 +528,7 @@ def test_admin_lists_participants_including_administrator_lock_state(
             "participantCode": api_participant.participant_code,
             "status": "admin_locked",
             "interviewStatus": "not_started",
+            "temporaryLockedUntil": None,
         }
     ]
 

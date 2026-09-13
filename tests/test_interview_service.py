@@ -459,7 +459,18 @@ def test_admin_review_rules_status_audit_and_formula_safe_csv(
         question_id="E1",
         action="approve",
     )
-    assert service.review_status(reviewed) == "reviewed"
+    assert service.review_status(reviewed) == "in_review", (
+        "a running interview still has unasked questions, so review is not done"
+    )
+    db_session.execute(
+        update(Interview)
+        .where(Interview.id == interview_id)
+        .values(status="completed", progress=100, completed_at=NOW)
+    )
+    db_session.commit()
+    db_session.expire_all()
+    finished = service.get_for_admin(interview_id)
+    assert service.review_status(finished) == "reviewed"
     assert len(reviewed.scorecard_items[0].expert_review.original_status) > 0
 
     csv_text = service.export_csv(
@@ -615,3 +626,60 @@ def test_marking_a_decision_wrong_needs_no_rationale(db_session: Session) -> Non
             action="override",
             expert_status="positive",
         )
+
+
+def test_a_finished_interview_does_not_block_the_next_one(
+    db_session: Session,
+) -> None:
+    participant = create_account(db_session, participant_code="P-AGAIN")
+    engine = ScriptedEngine(
+        engine_result("첫 인터뷰의 첫 질문입니다.", complete=True),
+        engine_result("새 인터뷰의 첫 질문입니다."),
+    )
+    service = InterviewService(db_session, engine=engine, clock=lambda: NOW)
+    finished = asyncio.run(service.start(participant.id))
+    assert finished.status == "completed"
+
+    again = asyncio.run(service.start(participant.id))
+
+    assert again.id != finished.id
+    assert again.status == "active"
+    assert service.get_current(participant.id).id == again.id
+
+
+def test_a_running_interview_is_resumed_rather_than_duplicated(
+    db_session: Session,
+) -> None:
+    participant = create_account(db_session, participant_code="P-RESUME")
+    engine = ScriptedEngine(engine_result("첫 질문입니다."))
+    service = InterviewService(db_session, engine=engine, clock=lambda: NOW)
+    started = asyncio.run(service.start(participant.id))
+
+    resumed = asyncio.run(service.start(participant.id))
+
+    assert resumed.id == started.id
+
+
+def test_an_abandoned_interview_can_be_archived_out_of_the_queue(
+    db_session: Session,
+) -> None:
+    participant = create_account(db_session, participant_code="P-ABANDON")
+    admin = create_account(db_session, role=Role.ADMIN.value, participant_code=None)
+    engine = ScriptedEngine(
+        engine_result("첫 질문입니다."),
+        engine_result("새 인터뷰의 첫 질문입니다."),
+    )
+    service = InterviewService(db_session, engine=engine, clock=lambda: NOW)
+    abandoned = asyncio.run(service.start(participant.id))
+    admin_id = admin.id
+    participant_id = participant.id
+
+    archived = service.archive_interview(
+        reviewer_user_id=admin_id,
+        interview_id=abandoned.id,
+    )
+
+    assert archived.status == "archived"
+    assert service.get_current(participant_id) is None
+    restarted = asyncio.run(service.start(participant_id))
+    assert restarted.id != archived.id

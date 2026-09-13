@@ -91,6 +91,13 @@ class InterviewService:
         with self.session.begin():
             return self.repository.get_current(participant_id)
 
+    @staticmethod
+    def _running(interview: Interview | None) -> Interview | None:
+        """A finished interview is history; only a running one is resumed."""
+        if interview is not None and interview.status == "active":
+            return interview
+        return None
+
     async def start(self, participant_id: UUID) -> Interview:
         lock_key = f"participant:{participant_id}"
         lock = _retain_lock(lock_key)
@@ -100,9 +107,9 @@ class InterviewService:
                 await asyncio.sleep(0.01)
             acquired = True
             with self.session.begin():
-                current = self.repository.get_current(participant_id)
-                if current is not None:
-                    return current
+                running = self._running(self.repository.get_current(participant_id))
+                if running is not None:
+                    return running
 
             engine = self._require_engine()
             initial_scorecard = Scorecard().to_dict()
@@ -117,9 +124,11 @@ class InterviewService:
             now = self.clock()
             with self.session.begin():
                 self.repository.lock_interview_start(participant_id)
-                current = self.repository.get_current(participant_id, for_update=True)
-                if current is not None:
-                    return current
+                running = self._running(
+                    self.repository.get_current(participant_id, for_update=True)
+                )
+                if running is not None:
+                    return running
 
                 interview = Interview(
                     id=interview_id,
@@ -355,17 +364,18 @@ class InterviewService:
     )
 
     def archive_interview(self, *, reviewer_user_id: UUID, interview_id: UUID) -> Interview:
-        """Retire a finished interview so the participant can begin a new one.
+        """Retire an interview so the participant can begin a new one.
 
-        The record stays in the queue and in exports; it simply stops being the
-        participant's current interview.
+        A finished interview is filed away; an abandoned one is closed out of
+        the queue. Either way the record stays in the queue listing and in
+        exports; it simply stops being the participant's current interview.
         """
         now = self.clock()
         with self.session.begin():
             interview = self.repository.get_for_admin(interview_id, for_update=True)
             if interview is None:
                 raise InterviewNotFound
-            if interview.status != "completed":
+            if interview.status == "archived":
                 raise InterviewStateConflict
             interview.status = "archived"
             interview.archived_at = now
@@ -459,13 +469,18 @@ class InterviewService:
 
     @staticmethod
     def review_status(interview: Interview) -> str:
+        """How far the expert has gotten with this interview.
+
+        A running interview can never be fully reviewed: questions the
+        participant has not reached yet will still arrive.
+        """
         eligible = [
             item for item in interview.scorecard_items if item.ai_status is not None
         ]
         reviewed = [item for item in eligible if item.expert_review is not None]
         if not reviewed:
             return "unreviewed"
-        if len(reviewed) == len(eligible):
+        if len(reviewed) == len(eligible) and interview.status != "active":
             return "reviewed"
         return "in_review"
 

@@ -8,6 +8,29 @@ from langchain_core.tools import tool
 
 from .scorecard import Scorecard
 
+FREE_RESPONSE_QUESTIONS = ("E1", "E2")
+MAX_CODED_VALUE_LENGTH = 12
+
+
+def _reject_uncoded_value(question_id: str, value: Optional[str]) -> Optional[str]:
+    """Keep prose out of the value column of a coded question.
+
+    The value is what the reviewer compares against the answer and what the CSV
+    carries, so it has to stay a short code such as '예', '주 2회' or '12개월'.
+    Free-response questions record the participant's own words instead.
+    """
+    if question_id in FREE_RESPONSE_QUESTIONS:
+        return None
+    text = (value or "").strip()
+    if len(text) <= MAX_CODED_VALUE_LENGTH:
+        return None
+    return (
+        f"오류: '{question_id}'의 value는 짧은 코드값이어야 합니다 "
+        f"(예: '예', '아니요', '주 2회', '0명', '12개월'). "
+        f"{MAX_CODED_VALUE_LENGTH}자 이내로 다시 기입하세요. "
+        "참여자의 문장은 value가 아니라 rationale에 적습니다."
+    )
+
 
 def execute_scorecard_action(
     sc: Scorecard,
@@ -28,6 +51,9 @@ def execute_scorecard_action(
                 f"현재 열린 문항은 '{open_question}'입니다. "
                 "묻지 않은 문항은 기입할 수 없습니다."
             )
+        uncoded = _reject_uncoded_value(question_id, value)
+        if uncoded is not None:
+            return uncoded
         return sc.record(question_id, status, value, rationale)
 
     elif action == "update":
@@ -41,6 +67,9 @@ def execute_scorecard_action(
                 f"오류: '{question_id}'은 기입된 적이 없어 수정할 수 없습니다. "
                 "질문 순서에 따라 record를 사용하세요."
             )
+        uncoded = _reject_uncoded_value(question_id, value)
+        if uncoded is not None:
+            return uncoded
         return sc.update(question_id, status, value, rationale)
 
     elif action == "clear":

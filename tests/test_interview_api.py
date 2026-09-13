@@ -371,7 +371,9 @@ def test_admin_list_detail_review_export_and_participant_status(
     assert missing_csrf.status_code == 403
     assert invalid_null_review.status_code == 400
     assert reviewed.status_code == 200
-    assert reviewed.json()["reviewStatus"] == "reviewed"
+    assert reviewed.json()["reviewStatus"] == "in_review", (
+        "a running interview is never fully reviewed"
+    )
     assert missing_export_csrf.status_code == 403
     assert exported.status_code == 200
     assert exported.headers["content-type"].startswith("text/csv")
@@ -701,8 +703,14 @@ def test_archiving_a_finished_interview_frees_the_participant(
 
     with TestClient(api.app) as participant_client:
         csrf = login(participant_client, participant)
-        blocked = participant_client.post("/api/interviews", headers=mutation_headers(csrf))
-    assert blocked.json()["id"] == first_id, "a finished interview still blocks a new one"
+        after_finishing = participant_client.post(
+            "/api/interviews", headers=mutation_headers(csrf)
+        )
+    second_id = after_finishing.json()["id"]
+    assert second_id != first_id, (
+        "a finished interview is history; asking again starts a new one"
+    )
+    assert after_finishing.json()["status"] == "active"
 
     with TestClient(api.app) as admin_client:
         admin_csrf = login(admin_client, admin)
@@ -714,10 +722,17 @@ def test_archiving_a_finished_interview_frees_the_participant(
             f"/api/admin/interviews/{first_id}/archive",
             headers=mutation_headers(admin_csrf),
         )
+        abandoned = admin_client.post(
+            f"/api/admin/interviews/{second_id}/archive",
+            headers=mutation_headers(admin_csrf),
+        )
 
     assert archived.status_code == 200
     assert archived.json()["status"] == "archived"
     assert again.status_code == 409, "an archived interview cannot be archived twice"
+    assert abandoned.status_code == 200, (
+        "an abandoned interview can be closed out of the queue too"
+    )
 
     with TestClient(api.app) as participant_client:
         csrf = login(participant_client, participant)
@@ -725,7 +740,9 @@ def test_archiving_a_finished_interview_frees_the_participant(
         fresh = participant_client.post("/api/interviews", headers=mutation_headers(csrf))
 
     assert fresh.status_code == 201
-    assert fresh.json()["id"] != first_id, "the participant gets a brand new interview"
+    assert fresh.json()["id"] not in (first_id, second_id), (
+        "the participant gets a brand new interview"
+    )
 
     with TestClient(api.app) as admin_client:
         login(admin_client, admin)
