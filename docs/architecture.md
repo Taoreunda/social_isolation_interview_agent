@@ -40,7 +40,7 @@ FastAPI가 각 요청에서 세션, 역할과 resource 소유권을 검사합니
 - `last_seen_at`: 쓰기를 15분 간격으로 제한
 - 비밀번호 변경·재설정·비활성화·관리자 잠금/해제: 대상 계정의 모든 세션 폐기
 
-로그인 실패는 두 단계입니다. 15분 안에 다섯 번 실패하면 15분 임시 잠금, 임시 잠금 종료 후 다시 15분 안에 다섯 번 실패하면 `admin_locked`가 됩니다. 임시 잠금 중 요청은 다음 단계 횟수에 포함하지 않습니다. 성공 로그인과 관리자 해제는 실패 단계를 초기화합니다.
+관리자 참여자 목록은 임시 잠금 해제 시각(`temporaryLockedUntil`)을 함께 반환합니다. 로그인 실패는 두 단계입니다. 15분 안에 다섯 번 실패하면 15분 임시 잠금, 임시 잠금 종료 후 다시 15분 안에 다섯 번 실패하면 `admin_locked`가 됩니다. 임시 잠금 중 요청은 다음 단계 횟수에 포함하지 않습니다. 성공 로그인과 관리자 해제는 실패 단계를 초기화합니다.
 
 ## PostgreSQL 모델
 
@@ -57,7 +57,7 @@ Migration `20260905_0002`:
 - `scorecard_items`: 문항 순서·텍스트, AI 상태·값·근거, clarification 횟수와 평가 시각
 - `expert_reviews`: 문항별 최신 연구자 동의/변경 결과
 
-UUID와 UTC timezone-aware timestamp를 사용합니다. partial unique index가 참여자당 활성 인터뷰 하나를 보장하고(완료한 인터뷰를 관리자가 보관하면 새 인터뷰를 시작할 수 있습니다), `(interview_id, client_turn_id, role)`이 turn 재전송의 중복 메시지를 막습니다. 상태·진행률·문항 상태는 database check constraint로 제한합니다.
+UUID와 UTC timezone-aware timestamp를 사용합니다. partial unique index가 참여자당 활성 인터뷰 하나를 보장하고(완료한 인터뷰는 기록으로 남고 새 인터뷰를 바로 시작할 수 있으며, 관리자는 완료한 인터뷰뿐 아니라 중단된 인터뷰도 보관해 대기열에서 내릴 수 있습니다), `(interview_id, client_turn_id, role)`이 turn 재전송의 중복 메시지를 막습니다. 상태·진행률·문항 상태는 database check constraint로 제한합니다.
 
 ## 인터뷰 turn
 
@@ -70,7 +70,7 @@ UUID와 UTC timezone-aware timestamp를 사용합니다. partial unique index가
 
 LLM 실패는 이전 커밋을 보존합니다. 서버 재시작 후에도 마지막 turn 경계부터 복원합니다. system prompt, tool call/message와 provider 객체는 저장하지 않습니다. 초기 인터뷰 생성은 process lock과 PostgreSQL advisory lock으로 직렬화됩니다.
 
-모델이 기존 AI 판단을 바꾸면 해당 문항의 이전 전문가 검토를 무효화합니다. AI 상태가 `null`이면 검토할 수 없고 `recorded` 문항은 동의만 가능하며, 변경은 AI 판정과 다른 값이어야 합니다. 같은 값으로의 변경은 `400`으로 거부하고, 검토 UI는 `recorded` 행의 변경 버튼을 비활성화한 뒤 대화상자에서 유일하게 유효한 반대 판정을 기본 선택합니다. 검토 상태는 AI 판단이 존재하는 행만 대상으로 `unreviewed|in_review|reviewed`를 계산합니다.
+모델이 기존 AI 판단을 바꾸면 해당 문항의 이전 전문가 검토를 무효화합니다. AI 상태가 `null`이면 검토할 수 없고 `recorded` 문항은 동의만 가능하며, 변경은 AI 판정과 다른 값이어야 합니다. 같은 값으로의 변경은 `400`으로 거부하고, 검토 UI는 `recorded` 행의 변경 버튼을 비활성화한 뒤 대화상자에서 유일하게 유효한 반대 판정을 기본 선택합니다. 검토 상태는 AI 판단이 존재하는 행만 대상으로 `unreviewed|in_review|reviewed`를 계산하며, 아직 진행 중인 인터뷰는 남은 문항이 더 들어오므로 `reviewed`가 되지 않습니다. 점수표 도구는 E1·E2를 제외한 문항의 `value`를 12자 이내 코드값(`예`, `주 2회`, `0명`, `12개월`)으로 제한합니다. 참여자의 문장은 `rationale`과 답변 메시지에 남습니다.
 
 ## API 계약
 
@@ -93,7 +93,7 @@ LLM 실패는 이전 커밋을 보존합니다. 서버 재시작 후에도 마�
 
 오류 의미는 `401` 인증 실패, `403` 역할·CSRF·origin 실패, `404` 보이지 않거나 없는 resource, `409` 상태/동시성 충돌, `503` DB·모델 dependency 실패입니다. 외부 exception 세부 정보는 응답에 포함하지 않습니다. CSV의 외부 유래 문자열은 spreadsheet formula 실행을 막도록 escape하며 export audit event를 남깁니다.
 
-React의 `HttpAppApi`가 기본 구현입니다. 현재 인터뷰가 없다는 `404`에만 CSRF 보호된 생성 요청을 이어서 보냅니다. `VITE_APP_MODE=mock`은 격리된 UI 개발과 테스트에만 사용합니다. 옛 무인증 인터뷰 API, `MemorySaver`, JSON 결과 저장과 transcript logger는 애플리케이션에서 제거되었습니다.
+React의 `HttpAppApi`가 기본 구현입니다. 인터뷰 생성은 참여자가 시작을 누를 때만 보내며, 화면 진입만으로는 인터뷰가 만들어지지 않습니다. `VITE_APP_MODE=mock`은 격리된 UI 개발과 테스트에만 사용합니다. 옛 무인증 인터뷰 API, `MemorySaver`, JSON 결과 저장과 transcript logger는 애플리케이션에서 제거되었습니다.
 
 ## 운영 경계
 

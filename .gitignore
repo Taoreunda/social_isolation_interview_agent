@@ -35,3 +35,6 @@ data/results/*.json
 # Local data and research source material
 data/
 references/
+
+# User-owned presentation material (out of application scope)
+presentation/
