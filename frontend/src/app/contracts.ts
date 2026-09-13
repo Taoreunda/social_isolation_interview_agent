@@ -36,6 +36,7 @@ export interface ParticipantRecord {
   participantCode: string
   status: AccountStatus
   interviewStatus: InterviewStatus | 'not_started'
+  temporaryLockedUntil?: string | null
 }
 
 export interface InterviewMessage {
@@ -104,6 +105,7 @@ export interface AppApi {
   getCurrentUser(): Promise<CurrentUser | null>
   changePassword(currentPassword: string, newPassword: string): Promise<void>
   getCurrentInterview(): Promise<ParticipantInterview>
+  startInterview(): Promise<ParticipantInterview>
   sendMessage(interviewId: string, clientTurnId: string, content: string): Promise<ParticipantInterview>
   listParticipants(): Promise<ParticipantRecord[]>
   createParticipant(input: CreateParticipantInput): Promise<CreatedParticipant>

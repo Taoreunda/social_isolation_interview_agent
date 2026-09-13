@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
+import { ApiError } from '@/app/api-error'
 import type { AppApi, ParticipantInterview } from '@/app/contracts'
 import { mockCredentials } from '@/mocks/fixtures'
 import { MockAppApi } from '@/mocks/mock-api'
@@ -34,6 +35,7 @@ function createApi(overrides: Partial<AppApi> = {}): AppApi {
     getCurrentUser: vi.fn(),
     changePassword: vi.fn(),
     getCurrentInterview: vi.fn().mockResolvedValue(cloneInterview()),
+    startInterview: vi.fn().mockResolvedValue(cloneInterview()),
     sendMessage: vi.fn().mockResolvedValue(cloneInterview()),
     listParticipants: vi.fn(),
     createParticipant: vi.fn(),
@@ -367,7 +369,7 @@ describe('InterviewPage', () => {
     expect(participant).toHaveClass('whitespace-pre-wrap')
   })
 
-  it('renders multiline messages and a neutral completion state without reset actions', async () => {
+  it('renders multiline messages and a completion state that only offers a new interview', async () => {
     const complete = cloneInterview({ ...interview, status: 'completed', progress: 100 })
     const api = createApi({ getCurrentInterview: vi.fn().mockResolvedValue(complete) })
     renderInterview(api)
@@ -375,6 +377,55 @@ describe('InterviewPage', () => {
     expect(await screen.findByText('완료했습니다')).toBeInTheDocument()
     expect(screen.getByLabelText('인터뷰 진행자 메시지').querySelector('p')).toHaveClass('whitespace-pre-wrap')
     expect(screen.queryByLabelText('답변 입력')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /새 인터뷰|초기화/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '초기화' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '새 인터뷰 시작' })).toBeInTheDocument()
+  })
+})
+
+describe('starting an interview', () => {
+  it('waits to be asked instead of creating one on arrival', async () => {
+    const startInterview = vi.fn().mockResolvedValue(cloneInterview())
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockRejectedValue(new ApiError(404, '인터뷰를 찾을 수 없습니다.')),
+      startInterview,
+    })
+    renderInterview(api)
+
+    const start = await screen.findByRole('button', { name: '인터뷰 시작' })
+    expect(startInterview).not.toHaveBeenCalled()
+
+    await userEvent.click(start)
+
+    expect(startInterview).toHaveBeenCalledOnce()
+    expect(await screen.findByRole('heading', { name: '인터뷰 진행 중' })).toBeInTheDocument()
+  })
+
+  it('lets a participant who finished begin a new one', async () => {
+    const startInterview = vi.fn().mockResolvedValue(cloneInterview())
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockResolvedValue(
+        cloneInterview({ ...interview, status: 'completed' }),
+      ),
+      startInterview,
+    })
+    renderInterview(api)
+    await screen.findByRole('heading', { name: '완료했습니다' })
+
+    await userEvent.click(screen.getByRole('button', { name: '새 인터뷰 시작' }))
+
+    expect(startInterview).toHaveBeenCalledOnce()
+    expect(await screen.findByRole('heading', { name: '인터뷰 진행 중' })).toBeInTheDocument()
+  })
+
+  it('says so when an interview cannot be started', async () => {
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockRejectedValue(new ApiError(404, '없음')),
+      startInterview: vi.fn().mockRejectedValue(new ApiError(503, '사용할 수 없음')),
+    })
+    renderInterview(api)
+
+    await userEvent.click(await screen.findByRole('button', { name: '인터뷰 시작' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('인터뷰를 시작하지 못했습니다')
   })
 })

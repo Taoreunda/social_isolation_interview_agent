@@ -67,6 +67,7 @@ function withSessionErrors(api: AppApi, authorizedRequest: AuthorizedRequest): A
       () => api.changePassword(currentPassword, newPassword),
     ),
     getCurrentInterview: () => authorizedRequest(() => api.getCurrentInterview()),
+    startInterview: () => authorizedRequest(() => api.startInterview()),
     sendMessage: (interviewId, clientTurnId, content) => authorizedRequest(
       () => api.sendMessage(interviewId, clientTurnId, content),
     ),

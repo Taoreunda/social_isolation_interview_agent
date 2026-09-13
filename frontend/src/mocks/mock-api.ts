@@ -74,9 +74,48 @@ export class MockAppApi implements AppApi {
 
   async getCurrentInterview(): Promise<ParticipantInterview> {
     const account = this.requireParticipant()
-    const interview = this.state.interviews.find((candidate) => candidate.participantId === account.id)
+    const interview = this.currentInterviewOf(account.id)
     if (!interview) throw new ApiError(404, 'Interview not found')
     return this.toParticipantInterview(interview)
+  }
+
+  async startInterview(): Promise<ParticipantInterview> {
+    const account = this.requireParticipant()
+    const running = this.currentInterviewOf(account.id)
+    if (running && running.status === 'active') return this.toParticipantInterview(running)
+
+    const started: MockInterviewFixture = {
+      id: `interview-${(this.state.interviews.length + 1).toString().padStart(3, '0')}`,
+      participantId: account.id,
+      participantCode: account.participantCode ?? '',
+      status: 'active',
+      progress: 0,
+      reviewStatus: 'unreviewed',
+      updatedAt: '2026-08-25T09:00:00.000Z',
+      finalDiagnosis: null,
+      criteria: { A: null, B: null, C: null, D: null },
+      report: null,
+      algorithmVersion: 'react-scorecard-v1',
+      completedAt: null,
+      messages: [
+        {
+          id: 'message-001',
+          role: 'assistant',
+          content: '안녕하세요. 최근 한 달간 일상을 이야기해 주세요.',
+          createdAt: '2026-08-25T09:00:00.000Z',
+        },
+      ],
+      scorecard: [],
+    }
+    this.state.interviews.push(started)
+    return this.toParticipantInterview(started)
+  }
+
+  private currentInterviewOf(participantId: string): MockInterviewFixture | undefined {
+    const owned = this.state.interviews.filter(
+      (candidate) => candidate.participantId === participantId && candidate.status !== 'archived',
+    )
+    return owned.find((candidate) => candidate.status === 'active') ?? owned[owned.length - 1]
   }
 
   async sendMessage(

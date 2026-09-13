@@ -1,4 +1,4 @@
-import { AlertCircle, RefreshCw } from 'lucide-react'
+import { AlertCircle, Play, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useApi } from '@/app/api-context'
@@ -7,7 +7,16 @@ import type { ParticipantInterview } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { Chat } from '@/features/interview/Chat'
 
-type InterviewPhase = 'loading' | 'active' | 'sending' | 'load_error' | 'send_error' | 'completed'
+type InterviewPhase =
+  | 'loading'
+  | 'idle'
+  | 'starting'
+  | 'start_error'
+  | 'active'
+  | 'sending'
+  | 'load_error'
+  | 'send_error'
+  | 'completed'
 
 interface PendingTurn {
   clientTurnId: string
@@ -41,6 +50,11 @@ export function InterviewPage() {
       setPhase(phaseFor(detail))
     } catch (error) {
       if (!mounted.current || operation !== requestGeneration.current) return
+      if (hasApiStatus(error, 404)) {
+        setInterview(null)
+        setPhase('idle')
+        return
+      }
       if (hasApiStatus(error, 403)) setLoadError('이 인터뷰에 접근할 권한이 없습니다')
       setPhase('load_error')
     }
@@ -54,6 +68,27 @@ export function InterviewPage() {
       requestGeneration.current += 1
     }
   }, [loadInterview])
+
+  async function startInterview(): Promise<void> {
+    if (inFlight.current) return
+    const operation = ++requestGeneration.current
+    inFlight.current = true
+    setPhase('starting')
+    try {
+      const detail = await api.startInterview()
+      if (!mounted.current || operation !== requestGeneration.current) return
+      setAnswer('')
+      setPendingMessage(null)
+      pendingTurn.current = null
+      setInterview(detail)
+      setPhase(phaseFor(detail))
+    } catch {
+      if (!mounted.current || operation !== requestGeneration.current) return
+      setPhase('start_error')
+    } finally {
+      inFlight.current = false
+    }
+  }
 
   async function submitAnswer(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
@@ -103,12 +138,46 @@ export function InterviewPage() {
     )
   }
 
+  if (phase === 'idle' || phase === 'starting' || phase === 'start_error') {
+    const starting = phase === 'starting'
+    return (
+      <main className="mx-auto w-full max-w-3xl px-4 py-6">
+        <h1 className="text-xl font-semibold">인터뷰</h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          준비되셨으면 시작해 주세요. 진행자가 한 번에 한 가지씩 여쭙고, 답변은 언제든 이어서 하실 수 있습니다.
+        </p>
+        {phase === 'start_error' && <p className="mt-4 inline-flex items-center gap-2" role="alert">
+          <AlertCircle aria-hidden="true" className="size-4" />인터뷰를 시작하지 못했습니다
+        </p>}
+        <Button
+          aria-busy={starting}
+          className="mt-5 min-h-11 sm:min-h-9"
+          disabled={starting}
+          onClick={() => void startInterview()}
+          type="button"
+        >
+          <Play aria-hidden="true" />{phase === 'start_error' ? '다시 시도' : '인터뷰 시작'}
+        </Button>
+      </main>
+    )
+  }
+
   if (!interview) return null
 
   if (phase === 'completed') {
     return (
       <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 py-6">
-        <h1 className="text-xl font-semibold">완료했습니다</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold">완료했습니다</h1>
+          <Button
+            className="ml-auto min-h-11 sm:min-h-9"
+            onClick={() => void startInterview()}
+            type="button"
+            variant="outline"
+          >
+            <Play aria-hidden="true" />새 인터뷰 시작
+          </Button>
+        </div>
         <Chat
           answer=""
           isSending={false}

@@ -1,8 +1,9 @@
-import { AlertCircle, Archive, Download, MessageSquare, MessagesSquare, RefreshCw } from 'lucide-react'
+import { AlertCircle, Archive, Download, MessagesSquare, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { useApi } from '@/app/api-context'
+import { canSaveBlob } from '@/app/download'
 import { hasApiStatus } from '@/app/api-error'
 import type { InterviewDetail, ReviewScorecardInput } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,15 @@ function csvName(code: string): string {
     .replace(/[^A-Za-z0-9_-]+/g, '_')
     .replace(/^_+|_+$/g, '')
   return `${safeCode || 'interview'}.csv`
+}
+
+const CRITERIA = ['A', 'B', 'C', 'D']
+
+function progressLabel(status: InterviewDetail['status'], completedAt: string | null): string {
+  if (status === 'active') return '진행 중'
+  const finished = completedAt ? new Date(completedAt).toLocaleString('ko-KR') : null
+  const name = status === 'archived' ? '보관' : '완료'
+  return finished ? `${name} · ${finished}` : name
 }
 
 function criterionLabel(key: string, met: boolean | null): string {
@@ -150,13 +160,7 @@ export function InterviewReviewPage() {
     const existing = exportLock.current
     if (existing && sameVisit(existing, owner)) return
 
-    if (
-      typeof document === 'undefined'
-      || !document.body
-      || typeof URL === 'undefined'
-      || typeof URL.createObjectURL !== 'function'
-      || typeof URL.revokeObjectURL !== 'function'
-    ) {
+    if (!canSaveBlob()) {
       if (isCurrentVisit(owner)) setExportError('CSV를 다운로드할 수 없습니다')
       return
     }
@@ -236,7 +240,7 @@ export function InterviewReviewPage() {
         <p className="mt-1 text-sm text-muted-foreground">{detail.participantCode}</p>
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        {detail.status === 'completed' && <Button
+        {detail.status !== 'archived' && <Button
           aria-busy={archiving}
           className="min-h-11 sm:min-h-9"
           disabled={archiving}
@@ -244,13 +248,10 @@ export function InterviewReviewPage() {
           type="button"
           variant="outline"
         >
-          <Archive aria-hidden="true" />보관
+          <Archive aria-hidden="true" />{detail.status === 'active' ? '중단하고 보관' : '보관'}
         </Button>}
         <Link className={headerLinkClass} to={`/admin/interviews/${detail.id}/transcript`}>
           <MessagesSquare aria-hidden="true" className="size-4" />대화 기록
-        </Link>
-        <Link className={headerLinkClass} to="/admin/interview">
-          <MessageSquare aria-hidden="true" className="size-4" />인터뷰 해보기
         </Link>
         <Button
           aria-busy={exporting}
@@ -277,17 +278,16 @@ export function InterviewReviewPage() {
         <div>
           <dt className="text-sm text-muted-foreground">기준</dt>
           <dd className="flex flex-wrap gap-x-3 gap-y-1">
-            {['A', 'B', 'C', 'D'].map((key) => (
-              <span key={key}>{criterionLabel(key, detail.criteria[key] ?? null)}</span>
-            ))}
+            {CRITERIA.some((key) => (detail.criteria[key] ?? null) !== null)
+              ? CRITERIA.map((key) => (
+                <span key={key}>{criterionLabel(key, detail.criteria[key] ?? null)}</span>
+              ))
+              : <span className="text-muted-foreground">아직 평가 전</span>}
           </dd>
         </div>
         <div>
-          <dt className="text-sm text-muted-foreground">완료</dt>
-          <dd>
-            {detail.completedAt ? new Date(detail.completedAt).toLocaleString('ko-KR') : '진행 중'}
-            <span className="ml-2 text-sm text-muted-foreground">{detail.algorithmVersion}</span>
-          </dd>
+          <dt className="text-sm text-muted-foreground">상태</dt>
+          <dd>{progressLabel(detail.status, detail.completedAt)}</dd>
         </div>
       </dl>
       {detail.report && <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6">{detail.report}</p>}

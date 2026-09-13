@@ -108,12 +108,11 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
     <Table aria-label="점수표">
       <TableHeader className="sr-only sm:not-sr-only sm:table-header-group">
         <TableRow>
-          <TableHead className="w-[23%]">문항</TableHead>
-          <TableHead className="w-[20%]">답변</TableHead>
-          <TableHead className="w-[15%]">값</TableHead>
-          <TableHead className="w-[18%]">AI 판정</TableHead>
-          <TableHead className="w-[12%]">전문가 판정</TableHead>
-          <TableHead className="w-[12%]">작업</TableHead>
+          <TableHead className="w-[30%]">문항</TableHead>
+          <TableHead className="w-[24%]">답변</TableHead>
+          <TableHead className="w-[20%]">AI 판정</TableHead>
+          <TableHead className="w-[13%]">전문가 판정</TableHead>
+          <TableHead className="w-[13%]">작업</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody className="block sm:table-row-group">
@@ -126,9 +125,11 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
           <TableCell className="block break-words whitespace-normal sm:table-cell">
             <MobileLabel>답변:</MobileLabel>
             {row.answer ?? <span className="text-muted-foreground">기록 없음</span>}
-          </TableCell>
-          <TableCell className="block break-words whitespace-normal sm:table-cell">
-            <MobileLabel>값:</MobileLabel><span>{row.value ?? '없음'}</span>
+            {row.value && row.value !== row.answer && (
+              <span className="mt-1 inline-block rounded-md border border-border px-2 py-0.5 text-sm text-muted-foreground">
+                {row.value}
+              </span>
+            )}
           </TableCell>
           <TableCell className="block break-words whitespace-normal sm:table-cell">
             <MobileLabel>AI:</MobileLabel><Decision value={row.aiStatus} />
@@ -140,7 +141,7 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
           </TableCell>
           <TableCell className="block break-words whitespace-normal sm:table-cell">
             <MobileLabel>작업:</MobileLabel>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 aria-label={`${row.questionId} 맞음`}
                 className={actionClass}

@@ -2,6 +2,7 @@ import { AlertCircle, Ban, CircleCheck, CircleOff, Clock3, Download, KeyRound, L
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '@/app/api-context'
+import { canSaveBlob, saveBlob } from '@/app/download'
 import type { ParticipantRecord } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -43,14 +44,23 @@ function InterviewStatus({ status }: { status: ParticipantRecord['interviewStatu
   return <span className="inline-flex items-center gap-1"><Icon aria-hidden="true" className="size-4" />{interviewStatusLabel(status)}</span>
 }
 
-function AccountStatus({ status }: { status: ParticipantRecord['status'] }) {
+function AccountStatus({ participant }: { participant: ParticipantRecord }) {
   const labels = {
     active: '활성',
     admin_locked: '관리자 잠금',
     disabled: '비활성',
   } as const
+  const status = participant.status
   const Icon = status === 'active' ? CircleCheck : status === 'admin_locked' ? LockKeyhole : CircleOff
-  return <span className="inline-flex items-center gap-1"><Icon aria-hidden="true" className="size-4" />{labels[status]}</span>
+  const until = participant.temporaryLockedUntil ? new Date(participant.temporaryLockedUntil) : null
+  const locked = until !== null && until.getTime() > Date.now()
+  return <span className="inline-flex flex-wrap items-center gap-1">
+    <Icon aria-hidden="true" className="size-4" />{labels[status]}
+    {locked && <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+      <LockKeyhole aria-hidden="true" className="size-4" />
+      임시 잠금 ({until.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 해제)
+    </span>}
+  </span>
 }
 
 export function ParticipantsPage() {
@@ -123,7 +133,7 @@ export function ParticipantsPage() {
 
   async function exportCsv(): Promise<void> {
     if (exporting) return
-    if (typeof URL?.createObjectURL !== 'function') {
+    if (!canSaveBlob()) {
       setExportError('CSV를 다운로드할 수 없습니다')
       return
     }
@@ -131,14 +141,7 @@ export function ParticipantsPage() {
     setExportError(null)
     try {
       const blob = await api.exportInterviewsCsv({ participantIds: selected })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = selected.length ? 'participants-selected.csv' : 'participants-all.csv'
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
+      saveBlob(blob, selected.length ? 'participants-selected.csv' : 'participants-all.csv')
     } catch {
       setExportError('CSV를 다운로드하지 못했습니다')
     } finally {
@@ -313,7 +316,7 @@ export function ParticipantsPage() {
                 </TableCell>
                 <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">코드:</span>{participant.participantCode}</TableCell>
                 <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">사용자:</span>{participant.username}</TableCell>
-                <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">계정:</span><AccountStatus status={participant.status} /></TableCell>
+                <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">계정:</span><AccountStatus participant={participant} /></TableCell>
                 <TableCell className="block break-words whitespace-normal sm:table-cell"><span className="mr-1 font-medium sm:hidden">인터뷰:</span><InterviewStatus status={participant.interviewStatus} /></TableCell>
                 <TableCell className="block break-words whitespace-normal sm:table-cell">
                   <div className="flex flex-wrap justify-start gap-2 sm:justify-end">

@@ -1,8 +1,9 @@
-import { AlertCircle, CircleCheck, Clock3, Download, FileText, MessageSquare, RefreshCw } from 'lucide-react'
+import { AlertCircle, CircleCheck, Clock3, Download, FileText, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { useApi } from '@/app/api-context'
+import { canSaveBlob, saveBlob } from '@/app/download'
 import type { InterviewListItem } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -100,7 +101,7 @@ export function AdminDashboardPage() {
 
   async function exportCsv(): Promise<void> {
     if (exporting) return
-    if (typeof URL?.createObjectURL !== 'function') {
+    if (!canSaveBlob()) {
       setExportError('CSV를 다운로드할 수 없습니다')
       return
     }
@@ -108,14 +109,7 @@ export function AdminDashboardPage() {
     setExportError(null)
     try {
       const blob = await api.exportInterviewsCsv({ interviewIds: selected })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = selected.length ? 'interviews-selected.csv' : 'interviews-all.csv'
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
+      saveBlob(blob, selected.length ? 'interviews-selected.csv' : 'interviews-all.csv')
     } catch {
       setExportError('CSV를 다운로드하지 못했습니다')
     } finally {
@@ -140,12 +134,6 @@ export function AdminDashboardPage() {
           >
             <Download aria-hidden="true" />{exportLabel}
           </Button>
-          <Link
-            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9"
-            to="/admin/interview"
-          >
-            <MessageSquare aria-hidden="true" className="size-4" />인터뷰 해보기
-          </Link>
         </div>
       </div>
       <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-border py-4 sm:grid-cols-4">

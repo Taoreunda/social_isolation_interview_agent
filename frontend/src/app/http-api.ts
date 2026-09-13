@@ -130,18 +130,17 @@ export class HttpAppApi implements AppApi {
   }
 
   async getCurrentInterview(): Promise<ParticipantInterview> {
-    try {
-      return await this.requestJson<ParticipantInterview>(
-        '/api/interviews/current',
-        { method: 'GET' },
-      )
-    } catch (error) {
-      if (!(error instanceof ApiError) || error.status !== 404) throw error
-      return this.requestJson<ParticipantInterview>(
-        '/api/interviews',
-        this.withCsrf({ method: 'POST' }),
-      )
-    }
+    return this.requestJson<ParticipantInterview>(
+      '/api/interviews/current',
+      { method: 'GET' },
+    )
+  }
+
+  async startInterview(): Promise<ParticipantInterview> {
+    return this.requestJson<ParticipantInterview>(
+      '/api/interviews',
+      this.withCsrf({ method: 'POST' }),
+    )
   }
 
   async sendMessage(

@@ -55,7 +55,7 @@ function clone<T>(value: T): T {
 function createApi(overrides: Partial<AppApi> = {}): AppApi {
   return {
     login: vi.fn(), logout: vi.fn(), getCurrentUser: vi.fn(), changePassword: vi.fn(),
-    getCurrentInterview: vi.fn(), sendMessage: vi.fn(), listParticipants: vi.fn(),
+    getCurrentInterview: vi.fn(), startInterview: vi.fn(), sendMessage: vi.fn(), listParticipants: vi.fn(),
     createParticipant: vi.fn(), resetParticipantPassword: vi.fn(), disableParticipant: vi.fn(), enableParticipant: vi.fn(),
     unlockParticipant: vi.fn(),
     listInterviews: vi.fn().mockResolvedValue(clone(queue)),
@@ -233,13 +233,13 @@ describe('administrator interview review', () => {
     expect(decision.closest('span')).toHaveClass('whitespace-nowrap')
   })
 
-  it('keeps the row actions side by side', async () => {
+  it('wraps the row actions rather than pushing them out of the window', async () => {
     const api = createApi()
     renderReview(api)
     await screen.findByText('q1')
 
     const actions = screen.getByRole('button', { name: 'q1 맞음' }).parentElement
-    expect(actions).not.toHaveClass('flex-wrap')
+    expect(actions).toHaveClass('flex-wrap')
   })
 
   it('shows the research outcome on the review screen', async () => {
@@ -251,7 +251,7 @@ describe('administrator interview review', () => {
     expect(within(outcome).getByText('A 충족')).toBeInTheDocument()
     expect(within(outcome).getByText('D 미충족')).toBeInTheDocument()
     expect(within(outcome).getByText('평가를 모두 마쳤습니다.')).toBeInTheDocument()
-    expect(within(outcome).getByText(/react-scorecard-v1/)).toBeInTheDocument()
+    expect(within(outcome).queryByText(/react-scorecard-v1/)).not.toBeInTheDocument()
   })
 
   it('exports every interview when nothing is selected', async () => {
@@ -328,13 +328,13 @@ describe('administrator interview review', () => {
     expect(within(row).getByText('응답에서 혼자 지내는 시간이 길다고 언급했습니다.')).toBeInTheDocument()
   })
 
-  it('lays answer, value and the AI decision out as separate columns', async () => {
+  it('lays the answer and the AI decision out as separate columns', async () => {
     const api = createApi()
     renderReview(api)
     await screen.findByText('q1')
 
     expect(screen.getAllByRole('columnheader').map((h) => h.textContent))
-      .toEqual(['문항', '답변', '값', 'AI 판정', '전문가 판정', '작업'])
+      .toEqual(['문항', '답변', 'AI 판정', '전문가 판정', '작업'])
   })
 
   it('marks a decision right or wrong with a single click', async () => {
@@ -392,13 +392,21 @@ describe('administrator interview review', () => {
     expect(screen.queryByRole('button', { name: '보관' })).not.toBeInTheDocument()
   })
 
-  it('offers no archive while an interview is still running', async () => {
+  it('closes an abandoned interview out of the queue', async () => {
     const running = clone({ ...detail, status: 'active' as const })
-    const api = createApi({ getInterview: vi.fn().mockResolvedValue(running) })
+    const archived = clone({ ...detail, status: 'archived' as const })
+    const api = createApi({
+      getInterview: vi.fn().mockResolvedValue(running),
+      archiveInterview: vi.fn().mockResolvedValue(archived),
+    })
+    const user = userEvent.setup()
     renderReview(api)
     await screen.findByText('q1')
 
-    expect(screen.queryByRole('button', { name: '보관' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '중단하고 보관' }))
+
+    await waitFor(() => expect(api.archiveInterview).toHaveBeenCalledWith('interview-001'))
+    expect(screen.queryByRole('button', { name: /보관/ })).not.toBeInTheDocument()
   })
 
   it('sends the reviewer into a screen of its own for the transcript', async () => {
@@ -413,13 +421,12 @@ describe('administrator interview review', () => {
     expect(entry).toHaveAttribute('href', '/admin/interviews/interview-001/transcript')
   })
 
-  it('opens a live interview, not a reading screen, from 인터뷰 해보기', async () => {
+  it('leaves the live interview to the navigation instead of crowding the header', async () => {
     const api = createApi()
     renderReview(api)
     await screen.findByText('q1')
 
-    const entry = screen.getByRole('link', { name: '인터뷰 해보기' })
-    expect(entry).toHaveAttribute('href', '/admin/interview')
+    expect(screen.queryByRole('link', { name: '인터뷰 해보기' })).not.toBeInTheDocument()
   })
 
   it('shows the whole conversation on the transcript screen', async () => {
@@ -1089,13 +1096,12 @@ describe('administrator interview review', () => {
 })
 
 describe('administrator interview access', () => {
-  it('offers a way into the interview from the dashboard', async () => {
+  it('keeps the dashboard header to dashboard actions', async () => {
     const api = createApi()
     renderDashboard(api)
     await screen.findByText('P-001')
 
-    const entry = screen.getByRole('link', { name: '인터뷰 해보기' })
-    expect(entry).toHaveAttribute('href', '/admin/interview')
+    expect(screen.queryByRole('link', { name: '인터뷰 해보기' })).not.toBeInTheDocument()
   })
 
   it('labels an administrator run in the queue', async () => {

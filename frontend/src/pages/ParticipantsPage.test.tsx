@@ -246,6 +246,17 @@ describe('ParticipantsPage', () => {
     expect(within(row).getByText('진행 중')).toBeInTheDocument()
   })
 
+  it('shows a temporary lock so an administrator knows why a login fails', async () => {
+    const api = new DeferredParticipantApi()
+    renderWithApi(api)
+    await act(async () => api.listRequests[0].resolve([
+      participant({ temporaryLockedUntil: new Date(Date.now() + 10 * 60_000).toISOString() }),
+    ]))
+
+    const row = await screen.findByRole('row', { name: /P-002/ })
+    expect(within(row).getByText(/임시 잠금/)).toBeInTheDocument()
+  })
+
   it('filters rows by code or username', async () => {
     await renderParticipantsPage()
     const user = userEvent.setup()

@@ -1,5 +1,5 @@
 import { StrictMode, type ComponentType } from 'react'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -334,6 +334,17 @@ describe('complete application route tree', () => {
     expect(screen.getByText('비밀번호를 변경했습니다. 다시 로그인하세요.')).toBeInTheDocument()
     expect(screen.getByTestId('location-path')).toHaveTextContent('/login')
     await expect(api.getCurrentUser()).resolves.toBeNull()
+  })
+
+  it('carries the interview entry in the admin navigation', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'admin', password: 'research123!', remember: false })
+
+    renderCompleteRoutes(api, '/admin')
+
+    const navigation = await screen.findByRole('navigation', { name: '관리자 탐색' })
+    const entry = within(navigation).getByRole('link', { name: '인터뷰 해보기' })
+    expect(entry).toHaveAttribute('href', '/admin/interview')
   })
 
   it('renders an admin interview detail route directly', async () => {
