@@ -16,6 +16,22 @@ afterEach(() => {
 })
 
 describe('administrator interview queue', () => {
+  it('keeps archived interviews out of the queue until they are asked for', async () => {
+    const api = createApi({ listInterviews: vi.fn().mockResolvedValue([
+      { ...detail, id: 'live', participantCode: 'KU-001', status: 'active' },
+      { ...detail, id: 'filed', participantCode: 'KU-009', status: 'archived' },
+    ]) })
+    const user = userEvent.setup()
+    renderDashboard(api)
+    await screen.findByText('KU-001')
+
+    expect(screen.queryByText('KU-009')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('checkbox', { name: '보관 포함' }))
+
+    expect(await screen.findByText('KU-009')).toBeInTheDocument()
+  })
+
   it('shows total, active, completed, and unreviewed counts', async () => {
     const api = createApi({ listInterviews: vi.fn().mockResolvedValue([
       { ...detail, id: 'one', status: 'active', reviewStatus: 'in_review' },

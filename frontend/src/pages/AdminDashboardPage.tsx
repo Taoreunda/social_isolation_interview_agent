@@ -32,6 +32,7 @@ export function AdminDashboardPage() {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [items, setItems] = useState<InterviewListItem[]>([])
+  const [showArchived, setShowArchived] = useState(false)
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   const mounted = useRef(false)
   const token = useRef(0)
@@ -61,11 +62,13 @@ export function AdminDashboardPage() {
     }
   }, [load])
 
+  const visible = showArchived ? items : items.filter((item) => item.status !== 'archived')
+  const archivedCount = items.length - items.filter((item) => item.status !== 'archived').length
   const metrics = [
-    ['전체', items.length],
-    ['진행 중', items.filter((item) => item.status === 'active').length],
-    ['완료', items.filter((item) => item.status === 'completed').length],
-    ['미검토', items.filter((item) => item.reviewStatus === 'unreviewed').length],
+    ['전체', visible.length],
+    ['진행 중', visible.filter((item) => item.status === 'active').length],
+    ['완료', visible.filter((item) => item.status === 'completed').length],
+    ['미검토', visible.filter((item) => item.reviewStatus === 'unreviewed').length],
   ] as const
 
   if (phase === 'loading') {
@@ -87,10 +90,10 @@ export function AdminDashboardPage() {
     )
   }
 
-  const allSelected = items.length > 0 && items.every((item) => selected.includes(item.id))
+  const allSelected = visible.length > 0 && visible.every((item) => selected.includes(item.id))
 
   function toggleAll(): void {
-    setSelected(allSelected ? [] : items.map((item) => item.id))
+    setSelected(allSelected ? [] : visible.map((item) => item.id))
   }
 
   function toggle(id: string): void {
@@ -136,18 +139,28 @@ export function AdminDashboardPage() {
           </Button>
         </div>
       </div>
-      <dl className="mt-5 grid grid-cols-2 gap-3 border-y border-border py-4 sm:grid-cols-4">
-        {metrics.map(([label, value]) => (
-          <div key={label}>
-            <dt className="text-sm text-muted-foreground">{label}</dt>
-            <dd className="font-semibold">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <div className="mt-5 flex flex-wrap items-center gap-4 border-y border-border py-4">
+        <dl className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-4">
+          {metrics.map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-sm text-muted-foreground">{label}</dt>
+              <dd className="font-semibold">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        {archivedCount > 0 && <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+          <Checkbox
+            aria-label="보관 포함"
+            checked={showArchived}
+            onCheckedChange={() => setShowArchived((shown) => !shown)}
+          />
+          보관 {archivedCount}건 포함
+        </label>}
+      </div>
       {exportError && <p className="mt-3 inline-flex items-center gap-2" role="alert">
         <AlertCircle aria-hidden="true" className="size-4" />{exportError}
       </p>}
-      {items.length === 0 ? (
+      {visible.length === 0 ? (
         <p className="mt-6 text-muted-foreground">인터뷰가 없습니다</p>
       ) : (
         <Table aria-label="인터뷰 대기열" className="mt-5">
@@ -168,7 +181,7 @@ export function AdminDashboardPage() {
             </TableRow>
           </TableHeader>
           <TableBody className="block sm:table-row-group">
-            {items.map((item) => (
+            {visible.map((item) => (
               <TableRow
                 className="block cursor-pointer hover:bg-accent sm:table-row"
                 key={item.id}
