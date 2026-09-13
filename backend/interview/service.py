@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from threading import Lock
 from typing import Protocol
@@ -91,6 +91,13 @@ class InterviewService:
         with self.session.begin():
             return self.repository.get_current(participant_id)
 
+    @staticmethod
+    def _running(interview: Interview | None) -> Interview | None:
+        """A finished interview is history; only a running one is resumed."""
+        if interview is not None and interview.status == "active":
+            return interview
+        return None
+
     async def start(self, participant_id: UUID) -> Interview:
         lock_key = f"participant:{participant_id}"
         lock = _retain_lock(lock_key)
@@ -100,9 +107,9 @@ class InterviewService:
                 await asyncio.sleep(0.01)
             acquired = True
             with self.session.begin():
-                current = self.repository.get_current(participant_id)
-                if current is not None:
-                    return current
+                running = self._running(self.repository.get_current(participant_id))
+                if running is not None:
+                    return running
 
             engine = self._require_engine()
             initial_scorecard = Scorecard().to_dict()
@@ -117,9 +124,11 @@ class InterviewService:
             now = self.clock()
             with self.session.begin():
                 self.repository.lock_interview_start(participant_id)
-                current = self.repository.get_current(participant_id, for_update=True)
-                if current is not None:
-                    return current
+                running = self._running(
+                    self.repository.get_current(participant_id, for_update=True)
+                )
+                if running is not None:
+                    return running
 
                 interview = Interview(
                     id=interview_id,
@@ -206,15 +215,16 @@ class InterviewService:
                     max((message.sequence for message in interview.messages), default=-1)
                     + 1
                 )
+                answer = InterviewMessage(
+                    sequence=next_sequence,
+                    role="user",
+                    content=content,
+                    client_turn_id=client_turn_id,
+                    created_at=now,
+                )
                 interview.messages.extend(
                     (
-                        InterviewMessage(
-                            sequence=next_sequence,
-                            role="user",
-                            content=content,
-                            client_turn_id=client_turn_id,
-                            created_at=now,
-                        ),
+                        answer,
                         InterviewMessage(
                             sequence=next_sequence + 1,
                             role="assistant",
@@ -224,7 +234,7 @@ class InterviewService:
                         ),
                     )
                 )
-                self._apply_scorecard(interview, result.scorecard, now)
+                self._apply_scorecard(interview, result.scorecard, now, answer)
                 interview.criteria = result.scorecard.get("criteria", {})
                 interview.final_diagnosis = result.final_diagnosis
                 interview.report = result.report
@@ -285,7 +295,7 @@ class InterviewService:
             if item.ai_status is None:
                 raise InvalidReview("An AI decision is required")
 
-            clean_rationale = rationale.strip() if rationale else None
+            clean_rationale = (rationale or "").strip() or None
             if action == "approve":
                 resolved_status = item.ai_status
             elif action == "override":
@@ -295,8 +305,6 @@ class InterviewService:
                     raise InvalidReview("Override requires a binary expert status")
                 if expert_status == item.ai_status:
                     raise InvalidReview("Override must change the AI decision")
-                if not clean_rationale:
-                    raise InvalidReview("Override requires a rationale")
                 resolved_status = expert_status
             else:
                 raise InvalidReview("Unknown review action")
@@ -332,67 +340,147 @@ class InterviewService:
             self.session.flush()
             return interview
 
+    CSV_HEADER = (
+        "interviewId",
+        "participantCode",
+        "status",
+        "progress",
+        "reviewStatus",
+        "finalDiagnosis",
+        "criteriaA",
+        "criteriaB",
+        "criteriaC",
+        "criteriaD",
+        "completedAt",
+        "algorithmVersion",
+        "report",
+        "questionId",
+        "question",
+        "answer",
+        "value",
+        "aiStatus",
+        "expertStatus",
+        "expertRationale",
+    )
+
+    def archive_interview(self, *, reviewer_user_id: UUID, interview_id: UUID) -> Interview:
+        """Retire an interview so the participant can begin a new one.
+
+        A finished interview is filed away; an abandoned one is closed out of
+        the queue. Either way the record stays in the queue listing and in
+        exports; it simply stops being the participant's current interview.
+        """
+        now = self.clock()
+        with self.session.begin():
+            interview = self.repository.get_for_admin(interview_id, for_update=True)
+            if interview is None:
+                raise InterviewNotFound
+            if interview.status == "archived":
+                raise InterviewStateConflict
+            interview.status = "archived"
+            interview.archived_at = now
+            interview.updated_at = now
+            self.repository.add_audit_event(
+                actor_user_id=reviewer_user_id,
+                action="interview.archived",
+                target_id=interview.id,
+                occurred_at=now,
+            )
+            self.session.flush()
+            return interview
+
     def export_csv(self, *, reviewer_user_id: UUID, interview_id: UUID) -> str:
         now = self.clock()
         with self.session.begin():
             interview = self.repository.get_for_admin(interview_id)
             if interview is None:
                 raise InterviewNotFound
+            return self._write_csv([interview], reviewer_user_id, now)
 
-            output = io.StringIO(newline="")
-            writer = csv.writer(output)
-            writer.writerow(
-                (
-                    "interviewId",
-                    "participantCode",
-                    "status",
-                    "progress",
-                    "reviewStatus",
-                    "questionId",
-                    "question",
-                    "value",
-                    "aiStatus",
-                    "expertStatus",
-                    "expertRationale",
-                )
-            )
+    def export_many_csv(
+        self,
+        *,
+        reviewer_user_id: UUID,
+        interview_ids: Sequence[UUID] | None = None,
+        participant_ids: Sequence[UUID] | None = None,
+    ) -> str:
+        """Export every interview, or the ones a reviewer picked by either key."""
+        now = self.clock()
+        with self.session.begin():
+            interviews = self.repository.list_for_admin()
+            if interview_ids:
+                wanted = set(interview_ids)
+                interviews = [row for row in interviews if row.id in wanted]
+            if participant_ids:
+                subjects = set(participant_ids)
+                interviews = [
+                    row for row in interviews if row.participant_id in subjects
+                ]
+            return self._write_csv(interviews, reviewer_user_id, now)
+
+    def _write_csv(
+        self,
+        interviews: Sequence[Interview],
+        reviewer_user_id: UUID,
+        now: datetime,
+    ) -> str:
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+        writer.writerow(self.CSV_HEADER)
+        for interview in interviews:
             review_status = self.review_status(interview)
+            criteria = interview.criteria or {}
             for item in interview.scorecard_items:
                 review = item.expert_review
                 writer.writerow(
                     self._csv_safe(value)
                     for value in (
                         str(interview.id),
-                        interview.participant.participant_code,
+                        interview.subject_label,
                         interview.status,
                         interview.progress,
                         review_status,
+                        interview.final_diagnosis,
+                        criteria.get("A"),
+                        criteria.get("B"),
+                        criteria.get("C"),
+                        criteria.get("D"),
+                        interview.completed_at.isoformat()
+                        if interview.completed_at
+                        else None,
+                        interview.algorithm_version,
+                        interview.report,
                         item.question_id,
                         item.question,
+                        item.answer_message.content if item.answer_message else None,
                         item.value,
                         item.ai_status,
                         review.expert_status if review else None,
                         review.rationale if review else None,
                     )
                 )
-
             self.repository.add_audit_event(
                 actor_user_id=reviewer_user_id,
                 action="interview.csv_exported",
                 target_id=interview.id,
                 occurred_at=now,
             )
-            return output.getvalue()
+        return output.getvalue()
 
     @staticmethod
     def review_status(interview: Interview) -> str:
+        """How far the expert has gotten with this interview.
+
+        A running interview can never be fully reviewed: questions the
+        participant has not reached yet will still arrive.
+        """
         eligible = [
             item for item in interview.scorecard_items if item.ai_status is not None
         ]
         reviewed = [item for item in eligible if item.expert_review is not None]
         if not reviewed:
             return "unreviewed"
-        if len(reviewed) == len(eligible):
+        if len(reviewed) == len(eligible) and interview.status != "active":
             return "reviewed"
         return "in_review"
 
@@ -431,6 +519,7 @@ class InterviewService:
         interview: Interview,
         scorecard: dict,
         now: datetime,
+        answer: InterviewMessage | None = None,
     ) -> None:
         item_data = scorecard.get("items", {})
         order = scorecard.get("question_order", list(item_data))
@@ -456,6 +545,7 @@ class InterviewService:
                 data.get("rationale"),
             ):
                 item.expert_review = None
+            was_open = item.ai_status is None
             item.position = position
             item.question = data.get("question", item.question)
             item.ai_status = data.get("status")
@@ -463,6 +553,8 @@ class InterviewService:
             item.rationale = data.get("rationale")
             item.clarification_count = int(data.get("clarification_count", 0))
             item.evaluated_at = self._parse_timestamp(data.get("timestamp"), now)
+            if answer is not None and item.ai_status is not None and was_open:
+                item.answer_message = answer
             if item.ai_status is not None:
                 evaluated_count += 1
         interview.criteria = scorecard.get("criteria", {})

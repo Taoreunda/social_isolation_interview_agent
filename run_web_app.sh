@@ -57,8 +57,9 @@ if [ "$WEB_PORT" != "$REQUESTED_WEB_PORT" ]; then
 fi
 
 echo "Starting FastAPI backend on http://127.0.0.1:$API_PORT"
+# Ignore SIGHUP so a detached stack outlives the shell that launched it.
 AUTH_ALLOWED_ORIGINS="$LOCAL_AUTH_ALLOWED_ORIGINS" \
-  uv run python -m uvicorn api:app --app-dir backend --reload --host 127.0.0.1 --port "$API_PORT" >"$API_LOG" 2>&1 &
+  nohup uv run python -m uvicorn api:app --app-dir backend --reload --host 127.0.0.1 --port "$API_PORT" >"$API_LOG" 2>&1 &
 API_PID=$!
 
 if [ ! -d "$ROOT_DIR/frontend/node_modules" ]; then
@@ -67,10 +68,10 @@ if [ ! -d "$ROOT_DIR/frontend/node_modules" ]; then
 fi
 
 echo "Starting React frontend on http://127.0.0.1:$WEB_PORT/"
-(
-  cd "$ROOT_DIR/frontend"
-  VITE_API_PORT="$API_PORT" npm run dev -- --host 127.0.0.1 --port "$WEB_PORT" --strictPort
-) >"$WEB_LOG" 2>&1 &
+nohup sh -c '
+  cd "$1/frontend"
+  VITE_API_PORT="$2" npm run dev -- --host 127.0.0.1 --port "$3" --strictPort
+' _ "$ROOT_DIR" "$API_PORT" "$WEB_PORT" >"$WEB_LOG" 2>&1 &
 WEB_PID=$!
 
 cleanup() {

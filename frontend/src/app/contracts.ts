@@ -16,9 +16,14 @@ export interface LoginInput {
 }
 
 export interface CreateParticipantInput {
-  username: string
-  participantCode: string
-  password: string
+  username?: string
+  participantCode?: string
+  password?: string
+}
+
+export interface CreatedParticipant {
+  participant: ParticipantRecord
+  assignedPassword: string | null
 }
 
 export interface PasswordResult {
@@ -31,6 +36,7 @@ export interface ParticipantRecord {
   participantCode: string
   status: AccountStatus
   interviewStatus: InterviewStatus | 'not_started'
+  temporaryLockedUntil?: string | null
 }
 
 export interface InterviewMessage {
@@ -45,6 +51,7 @@ export type ScoreDecision = 'positive' | 'negative' | 'recorded'
 export interface ScorecardRow {
   questionId: string
   question: string
+  answer: string | null
   value: string | null
   rationale: string | null
   aiStatus: ScoreDecision | null
@@ -61,9 +68,19 @@ export interface InterviewListItem {
   updatedAt: string
 }
 
+export interface ExportSelection {
+  interviewIds?: string[]
+  participantIds?: string[]
+}
+
 export interface InterviewDetail extends InterviewListItem {
   messages: InterviewMessage[]
   scorecard: ScorecardRow[]
+  finalDiagnosis: string | null
+  criteria: Record<string, boolean | null>
+  report: string | null
+  algorithmVersion: string
+  completedAt: string | null
 }
 
 export interface ParticipantInterview {
@@ -88,14 +105,18 @@ export interface AppApi {
   getCurrentUser(): Promise<CurrentUser | null>
   changePassword(currentPassword: string, newPassword: string): Promise<void>
   getCurrentInterview(): Promise<ParticipantInterview>
+  startInterview(): Promise<ParticipantInterview>
   sendMessage(interviewId: string, clientTurnId: string, content: string): Promise<ParticipantInterview>
   listParticipants(): Promise<ParticipantRecord[]>
-  createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord>
+  createParticipant(input: CreateParticipantInput): Promise<CreatedParticipant>
   resetParticipantPassword(participantId: string): Promise<PasswordResult>
   disableParticipant(participantId: string): Promise<ParticipantRecord>
+  enableParticipant(participantId: string): Promise<ParticipantRecord>
   unlockParticipant(participantId: string): Promise<ParticipantRecord>
   listInterviews(): Promise<InterviewListItem[]>
   getInterview(interviewId: string): Promise<InterviewDetail>
   reviewScorecard(input: ReviewScorecardInput): Promise<InterviewDetail>
+  archiveInterview(interviewId: string): Promise<InterviewDetail>
   exportInterviewCsv(interviewId: string): Promise<Blob>
+  exportInterviewsCsv(selection: ExportSelection): Promise<Blob>
 }

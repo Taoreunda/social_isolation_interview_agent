@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiProvider } from '@/app/api-context'
-import type { CreateParticipantInput, ParticipantRecord, PasswordResult } from '@/app/contracts'
+import type { CreatedParticipant, CreateParticipantInput, ParticipantRecord, PasswordResult } from '@/app/contracts'
+import { mockCredentials } from '@/mocks/fixtures'
 import { MockAppApi } from '@/mocks/mock-api'
 import { ParticipantsPage } from './ParticipantsPage'
 
@@ -81,15 +82,15 @@ function deferred<T>(): Deferred<T> {
 
 class DeferredParticipantApi extends MockAppApi {
   readonly createInputs: CreateParticipantInput[] = []
-  readonly createRequests: Deferred<ParticipantRecord>[] = []
+  readonly createRequests: Deferred<CreatedParticipant>[] = []
   readonly disableRequests: Deferred<ParticipantRecord>[] = []
   readonly listRequests: Deferred<ParticipantRecord[]>[] = []
   readonly resetRequests: Deferred<PasswordResult>[] = []
   readonly unlockRequests: Deferred<ParticipantRecord>[] = []
 
-  override createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord> {
+  override createParticipant(input: CreateParticipantInput): Promise<CreatedParticipant> {
     this.createInputs.push(input)
-    const request = deferred<ParticipantRecord>()
+    const request = deferred<CreatedParticipant>()
     this.createRequests.push(request)
     return request.promise
   }
@@ -139,6 +140,95 @@ function renderWithApi(api: MockAppApi) {
 }
 
 describe('ParticipantsPage', () => {
+  it('says whose password was assigned', async () => {
+    const api = new MockAppApi()
+    await api.login({ ...mockCredentials.admin, remember: false })
+    const user = userEvent.setup()
+    renderWithApi(api)
+    await screen.findByText('P-001')
+
+    await user.click(screen.getByRole('button', { name: '계정 생성' }))
+    await user.click(screen.getByRole('button', { name: '생성' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/^KU-\d{3}$/)).toBeInTheDocument()
+    expect(within(dialog).getByText('할당 비밀번호')).toBeInTheDocument()
+  })
+
+  it('brings a disabled participant back', async () => {
+    const api = new MockAppApi()
+    await api.login({ ...mockCredentials.admin, remember: false })
+    const enableSpy = vi.spyOn(api, 'enableParticipant')
+    const user = userEvent.setup()
+    renderWithApi(api)
+    await screen.findByText('P-001')
+
+    await user.click(screen.getByRole('button', { name: '비활성화' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '비활성화' }))
+    await screen.findByRole('button', { name: '활성화' })
+
+    await user.click(screen.getByRole('button', { name: '활성화' }))
+    await waitFor(() => expect(enableSpy).toHaveBeenCalled())
+  })
+
+  it('names the participant table for assistive technology', async () => {
+    const api = new MockAppApi()
+    await api.login({ ...mockCredentials.admin, remember: false })
+    renderWithApi(api)
+
+    expect(await screen.findByRole('table', { name: '참여자 목록' })).toBeInTheDocument()
+  })
+
+  it('creates an account without asking the reviewer to invent identifiers', async () => {
+    const api = new MockAppApi()
+    await api.login({ ...mockCredentials.admin, remember: false })
+    const user = userEvent.setup()
+    renderWithApi(api)
+    await screen.findByText('P-001')
+
+    await user.click(screen.getByRole('button', { name: '계정 생성' }))
+    await user.click(screen.getByRole('button', { name: '생성' }))
+
+    const revealed = await screen.findByLabelText('할당된 비밀번호')
+    expect(revealed.textContent).toMatch(/^ku-\d{3}-[a-z0-9]{4,}$/)
+    expect(within(await screen.findByRole('dialog')).getByText(/^KU-\d{3}$/)).toBeInTheDocument()
+  })
+
+  it('exports the interviews of the participants a reviewer selects', async () => {
+    const api = new MockAppApi()
+    await api.login({ ...mockCredentials.admin, remember: false })
+    const exportSpy = vi.spyOn(api, 'exportInterviewsCsv')
+      .mockResolvedValue(new Blob(['participantCode\nP-001']))
+    vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const user = userEvent.setup()
+    renderWithApi(api)
+    await screen.findByText('P-001')
+
+    await user.click(screen.getByRole('button', { name: '전체 CSV 다운로드' }))
+    await waitFor(() => expect(exportSpy).toHaveBeenCalledWith({ participantIds: [] }))
+
+    await user.click(screen.getByRole('checkbox', { name: 'P-001 선택' }))
+    await user.click(screen.getByRole('button', { name: '선택 1명 CSV 다운로드' }))
+    await waitFor(() => expect(exportSpy).toHaveBeenLastCalledWith({
+      participantIds: [expect.any(String)],
+    }))
+  })
+
+  it('selects and clears every participant at once', async () => {
+    const api = new MockAppApi()
+    await api.login({ ...mockCredentials.admin, remember: false })
+    const user = userEvent.setup()
+    renderWithApi(api)
+    await screen.findByText('P-001')
+
+    await user.click(screen.getByRole('checkbox', { name: '전체 선택' }))
+    expect(screen.getByRole('checkbox', { name: 'P-001 선택' })).toBeChecked()
+
+    await user.click(screen.getByRole('checkbox', { name: '전체 선택' }))
+    expect(screen.getByRole('checkbox', { name: 'P-001 선택' })).not.toBeChecked()
+  })
+
   beforeEach(installBrowserStorage)
   afterEach(() => {
     vi.restoreAllMocks()
@@ -154,6 +244,17 @@ describe('ParticipantsPage', () => {
     const row = await screen.findByRole('row', { name: /P-001.*participant01/i })
     expect(within(row).getByText('활성')).toBeInTheDocument()
     expect(within(row).getByText('진행 중')).toBeInTheDocument()
+  })
+
+  it('shows a temporary lock so an administrator knows why a login fails', async () => {
+    const api = new DeferredParticipantApi()
+    renderWithApi(api)
+    await act(async () => api.listRequests[0].resolve([
+      participant({ temporaryLockedUntil: new Date(Date.now() + 10 * 60_000).toISOString() }),
+    ]))
+
+    const row = await screen.findByRole('row', { name: /P-002/ })
+    expect(within(row).getByText(/임시 잠금/)).toBeInTheDocument()
   })
 
   it('filters rows by code or username', async () => {
@@ -177,22 +278,11 @@ describe('ParticipantsPage', () => {
     await user.type(screen.getByLabelText('참여자 코드'), 'P-002')
     await user.click(screen.getByRole('button', { name: '생성' }))
 
-    expect(await screen.findByText('P-002')).toBeInTheDocument()
-    expect(screen.getByText('participant02')).toBeInTheDocument()
+    expect((await screen.findAllByText('P-002')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('participant02').length).toBeGreaterThan(0)
     expect(screen.getByLabelText('할당된 비밀번호')).toBeInTheDocument()
   })
 
-  it('generates a password of at least 16 characters', async () => {
-    await renderParticipantsPage()
-    const user = userEvent.setup()
-
-    await user.click(screen.getByRole('button', { name: '계정 생성' }))
-    await user.type(screen.getByLabelText('사용자 이름'), 'participant02')
-    await user.type(screen.getByLabelText('참여자 코드'), 'P-002')
-    await user.click(screen.getByRole('button', { name: '생성' }))
-
-    expect((await screen.findByLabelText('할당된 비밀번호')).textContent).toHaveLength(18)
-  })
 
   it('shows an assigned password once after create or reset', async () => {
     await renderParticipantsPage()
@@ -221,20 +311,6 @@ describe('ParticipantsPage', () => {
     expect(await screen.findByText('P-001')).toBeInTheDocument()
   })
 
-  it('submits the administrator-edited assigned password', async () => {
-    await renderParticipantsPage()
-    const user = userEvent.setup()
-
-    await user.click(screen.getByRole('button', { name: '계정 생성' }))
-    const password = screen.getByLabelText('할당 비밀번호')
-    await user.clear(password)
-    await user.type(password, 'edited-password-123!')
-    await user.type(screen.getByLabelText('사용자 이름'), 'participant02')
-    await user.type(screen.getByLabelText('참여자 코드'), 'P-002')
-    await user.click(screen.getByRole('button', { name: '생성' }))
-
-    expect(await screen.findByLabelText('할당된 비밀번호')).toHaveTextContent('edited-password-123!')
-  })
 
   it('locks duplicate create activation synchronously', async () => {
     const api = new DeferredParticipantApi()
@@ -265,14 +341,14 @@ describe('ParticipantsPage', () => {
     await user.click(screen.getByRole('button', { name: '생성' }))
 
     await act(async () => {
-      api.createRequests[0].resolve(participant())
+      api.createRequests[0].resolve({ participant: participant(), assignedPassword: 'ku-002-ab12' })
     })
-    expect(await screen.findByText('P-002')).toBeInTheDocument()
+    expect((await screen.findAllByText('P-002')).length).toBeGreaterThan(0)
     await act(async () => {
       api.listRequests[0].resolve([])
     })
 
-    expect(screen.getByText('P-002')).toBeInTheDocument()
+    expect(screen.getAllByText('P-002').length).toBeGreaterThan(0)
   })
 
   it('ignores a late create result after its dialog closes', async () => {
@@ -287,7 +363,7 @@ describe('ParticipantsPage', () => {
     await user.click(screen.getByRole('button', { name: '대화상자 닫기' }))
 
     await act(async () => {
-      api.createRequests[0].resolve(participant())
+      api.createRequests[0].resolve({ participant: participant(), assignedPassword: 'ku-002-ab12' })
     })
 
     expect(screen.queryByText('P-002')).not.toBeInTheDocument()
@@ -410,14 +486,6 @@ describe('ParticipantsPage', () => {
     expect(await screen.findByLabelText('할당된 비밀번호')).toHaveTextContent('reset-secret-12345!')
   })
 
-  it('uses Web Crypto to initialize a generated editable password', async () => {
-    const random = vi.spyOn(crypto, 'getRandomValues')
-    await renderParticipantsPage()
-    const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: '계정 생성' }))
-    expect(random).toHaveBeenCalled()
-    expect((screen.getByLabelText('할당 비밀번호') as HTMLInputElement).value.length).toBeGreaterThanOrEqual(16)
-  })
 
   it('announces clipboard success without repeating the assigned password', async () => {
     const api = new DeferredParticipantApi()

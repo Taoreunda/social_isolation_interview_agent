@@ -83,3 +83,63 @@ def test_the_open_question_advances_only_as_answers_are_recorded() -> None:
         )
 
     assert asked == ["A1", "A2", "A3", "B1"]
+
+
+def test_record_refuses_a_sentence_where_a_coded_value_belongs() -> None:
+    scorecard = Scorecard()
+
+    result = execute_scorecard_action(
+        scorecard,
+        "record",
+        "A1",
+        "positive",
+        "예, 거의 매일 방에만 있었습니다",
+        "명확히 답변함",
+    )
+
+    assert "오류" in result
+    assert scorecard.items["A1"]["status"] is None
+
+
+def test_record_keeps_the_short_coded_value() -> None:
+    scorecard = Scorecard()
+
+    result = execute_scorecard_action(scorecard, "record", "A1", "positive", "예", "근거")
+
+    assert "오류" not in result
+    assert scorecard.items["A1"]["value"] == "예"
+
+
+def test_update_holds_the_same_coded_value_rule() -> None:
+    scorecard = Scorecard()
+    execute_scorecard_action(scorecard, "record", "A1", "positive", "예", "근거")
+
+    result = execute_scorecard_action(
+        scorecard,
+        "update",
+        "A1",
+        "negative",
+        "아니요, 거의 매일 외출했습니다",
+        "정정",
+    )
+
+    assert "오류" in result
+    assert scorecard.items["A1"]["value"] == "예"
+
+
+def test_free_response_questions_may_hold_a_sentence() -> None:
+    scorecard = Scorecard()
+    while (open_question := scorecard.next_unanswered()) not in (None, "E1"):
+        scorecard.record(open_question, "negative", "아니요", "근거")
+
+    result = execute_scorecard_action(
+        scorecard,
+        "record",
+        "E1",
+        "recorded",
+        "최근 이사 후 아는 사람이 거의 없다고 이야기함",
+        "자유 응답",
+    )
+
+    assert "오류" not in result
+    assert scorecard.items["E1"]["status"] == "recorded"

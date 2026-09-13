@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertCircle, ClipboardList, LogOut, Users } from 'lucide-react'
+import { AlertCircle, ClipboardList, LogOut, MessageSquare, Users } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { useSession } from '@/app/session-context'
 const navigation = [
   { to: '/admin', label: '검토', icon: ClipboardList },
   { to: '/admin/participants', label: '참여자', icon: Users },
+  { to: '/admin/interview', label: '인터뷰 해보기', icon: MessageSquare },
 ]
 
 export function AdminLayout() {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -42,8 +43,8 @@ class ChangePasswordRequest(ApiSchema):
 
 
 class CreateParticipantRequest(ApiSchema):
-    username: str
-    participant_code: str
+    username: str | None = None
+    participant_code: str | None = None
     password: str | None = None
     generate_password: bool = False
 
@@ -62,6 +63,7 @@ class ParticipantResponse(ApiSchema):
     interview_status: Literal[
         "not_started", "active", "completed", "archived"
     ] = "not_started"
+    temporary_locked_until: datetime | None = None
 
 
 class ParticipantCredentialResponse(ApiSchema):

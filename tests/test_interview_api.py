@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import api
 import pytest
@@ -16,6 +16,7 @@ from auth.security import PasswordService
 from fastapi.testclient import TestClient
 from interview.engine import EngineTurnResult, InterviewGenerationError
 from interview.router import get_interview_engine
+from interview.models import Interview
 from interview.scorecard import Scorecard
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -363,12 +364,16 @@ def test_admin_list_detail_review_export_and_participant_status(
     assert listing.json()[0]["reviewStatus"] == "unreviewed"
     assert detail.status_code == 200
     assert detail.json()["scorecard"][0]["aiStatus"] == "positive"
-    assert "finalDiagnosis" not in detail.json()
+    assert "finalDiagnosis" in detail.json(), (
+        "the administrator detail carries the research outcome"
+    )
     assert participant_listing.json()[0]["interviewStatus"] == "active"
     assert missing_csrf.status_code == 403
     assert invalid_null_review.status_code == 400
     assert reviewed.status_code == 200
-    assert reviewed.json()["reviewStatus"] == "reviewed"
+    assert reviewed.json()["reviewStatus"] == "in_review", (
+        "a running interview is never fully reviewed"
+    )
     assert missing_export_csrf.status_code == 403
     assert exported.status_code == 200
     assert exported.headers["content-type"].startswith("text/csv")
@@ -435,3 +440,314 @@ def test_an_administrator_can_run_an_interview_for_debugging(
             headers=mutation_headers(participant_csrf),
             json={"clientTurnId": str(uuid4()), "content": "남의 인터뷰"},
         ).status_code == 404
+
+
+def test_admin_detail_carries_the_research_outcome_and_participants_never_see_it(
+    db_session: Session,
+    api_password_service: PasswordService,
+    api_fake_engine: ApiFakeEngine,
+) -> None:
+    participant = create_account(
+        db_session,
+        api_password_service,
+        username="outcome-participant",
+        role=Role.PARTICIPANT.value,
+        participant_code="P-OUT",
+    )
+    admin = create_account(
+        db_session,
+        api_password_service,
+        username="outcome-admin",
+        role=Role.ADMIN.value,
+        participant_code=None,
+    )
+
+    with TestClient(api.app) as participant_client:
+        csrf = login(participant_client, participant)
+        started = participant_client.post("/api/interviews", headers=mutation_headers(csrf))
+        interview_id = started.json()["id"]
+        participant_client.post(
+            f"/api/interviews/{interview_id}/messages",
+            headers=mutation_headers(csrf),
+            json={"clientTurnId": str(uuid4()), "content": "응답"},
+        )
+        current = participant_client.get("/api/interviews/current").json()
+
+    interview = db_session.get(Interview, UUID(interview_id))
+    interview.final_diagnosis = "히키코모리"
+    interview.criteria = {"A": True, "B": True, "C": False, "D": None}
+    interview.report = "평가를 마쳤습니다."
+    db_session.commit()
+
+    assert not {"finalDiagnosis", "criteria", "report"} & set(current)
+
+    with TestClient(api.app) as admin_client:
+        login(admin_client, admin)
+        detail = admin_client.get(f"/api/admin/interviews/{interview_id}").json()
+
+    assert detail["finalDiagnosis"] == "히키코모리"
+    assert detail["criteria"] == {"A": True, "B": True, "C": False, "D": None}
+    assert detail["report"] == "평가를 마쳤습니다."
+    assert detail["algorithmVersion"]
+
+
+def test_admin_exports_every_interview_or_only_the_selected_ones(
+    db_session: Session,
+    api_password_service: PasswordService,
+    api_fake_engine: ApiFakeEngine,
+) -> None:
+    admin = create_account(
+        db_session,
+        api_password_service,
+        username="bulk-admin",
+        role=Role.ADMIN.value,
+        participant_code=None,
+    )
+    codes = ("P-B1", "P-B2")
+    interview_ids: list[str] = []
+    for index, code in enumerate(codes):
+        participant = create_account(
+            db_session,
+            api_password_service,
+            username=f"bulk-participant-{index}",
+            role=Role.PARTICIPANT.value,
+            participant_code=code,
+        )
+        with TestClient(api.app) as participant_client:
+            csrf = login(participant_client, participant)
+            started = participant_client.post("/api/interviews", headers=mutation_headers(csrf))
+            interview_ids.append(started.json()["id"])
+
+    with TestClient(api.app) as admin_client:
+        admin_csrf = login(admin_client, admin)
+
+        every = admin_client.post(
+            "/api/admin/interviews/csv",
+            headers=mutation_headers(admin_csrf),
+            json={},
+        )
+        selected = admin_client.post(
+            "/api/admin/interviews/csv",
+            headers=mutation_headers(admin_csrf),
+            json={"interviewIds": [interview_ids[1]]},
+        )
+        without_csrf = admin_client.post(
+            "/api/admin/interviews/csv",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={},
+        )
+
+    assert every.status_code == 200
+    assert every.headers["content-type"].startswith("text/csv")
+    assert "attachment" in every.headers["content-disposition"]
+    assert "finalDiagnosis" in every.text
+    assert "P-B1" in every.text and "P-B2" in every.text
+
+    assert selected.status_code == 200
+    assert "P-B2" in selected.text
+    assert "P-B1" not in selected.text
+    assert "관리자 (bulk-admin)" not in every.text, "this administrator ran no interview"
+
+    assert without_csrf.status_code == 403
+
+    actions = list(db_session.scalars(select(AuditEvent.action)))
+    assert actions.count("interview.csv_exported") >= 3
+
+
+def test_an_administrator_run_is_labelled_in_the_export(
+    db_session: Session,
+    api_password_service: PasswordService,
+    api_fake_engine: ApiFakeEngine,
+) -> None:
+    admin = create_account(
+        db_session,
+        api_password_service,
+        username="export-admin",
+        role=Role.ADMIN.value,
+        participant_code=None,
+    )
+
+    with TestClient(api.app) as admin_client:
+        csrf = login(admin_client, admin)
+        admin_client.post("/api/interviews", headers=mutation_headers(csrf))
+        exported = admin_client.post(
+            "/api/admin/interviews/csv",
+            headers=mutation_headers(csrf),
+            json={},
+        )
+
+    assert exported.status_code == 200
+    assert "관리자 (export-admin)" in exported.text
+
+
+def test_the_review_payload_carries_the_answer_and_both_rationales(
+    db_session: Session,
+    api_password_service: PasswordService,
+    api_fake_engine: ApiFakeEngine,
+) -> None:
+    participant = create_account(
+        db_session,
+        api_password_service,
+        username="answer-participant",
+        role=Role.PARTICIPANT.value,
+        participant_code="P-ANS2",
+    )
+    admin = create_account(
+        db_session,
+        api_password_service,
+        username="answer-admin",
+        role=Role.ADMIN.value,
+        participant_code=None,
+    )
+
+    with TestClient(api.app) as participant_client:
+        csrf = login(participant_client, participant)
+        started = participant_client.post("/api/interviews", headers=mutation_headers(csrf))
+        interview_id = started.json()["id"]
+        participant_client.post(
+            f"/api/interviews/{interview_id}/messages",
+            headers=mutation_headers(csrf),
+            json={"clientTurnId": str(uuid4()), "content": "하루 대부분 집에 있습니다"},
+        )
+
+    with TestClient(api.app) as admin_client:
+        admin_csrf = login(admin_client, admin)
+        admin_client.post(
+            f"/api/admin/interviews/{interview_id}/scorecard/A1",
+            headers=mutation_headers(admin_csrf),
+            json={"action": "override", "expertStatus": "negative", "rationale": "재확인 결과 다름"},
+        )
+        detail = admin_client.get(f"/api/admin/interviews/{interview_id}").json()
+        exported = admin_client.post(
+            f"/api/admin/interviews/{interview_id}/csv",
+            headers=mutation_headers(admin_csrf),
+        )
+
+    a1 = next(row for row in detail["scorecard"] if row["questionId"] == "A1")
+    assert a1["answer"] == "하루 대부분 집에 있습니다"
+    assert a1["rationale"], "the AI rationale reaches the reviewer"
+    assert a1["expertRationale"] == "재확인 결과 다름"
+
+    assert "answer" in exported.text.splitlines()[0]
+    assert "하루 대부분 집에 있습니다" in exported.text
+
+
+def test_the_export_can_be_selected_by_participant(
+    db_session: Session,
+    api_password_service: PasswordService,
+    api_fake_engine: ApiFakeEngine,
+) -> None:
+    admin = create_account(
+        db_session,
+        api_password_service,
+        username="by-participant-admin",
+        role=Role.ADMIN.value,
+        participant_code=None,
+    )
+    chosen_id = None
+    for index, code in enumerate(("P-S1", "P-S2")):
+        participant = create_account(
+            db_session,
+            api_password_service,
+            username=f"by-participant-{index}",
+            role=Role.PARTICIPANT.value,
+            participant_code=code,
+        )
+        if code == "P-S2":
+            chosen_id = str(participant.id)
+        with TestClient(api.app) as participant_client:
+            csrf = login(participant_client, participant)
+            participant_client.post("/api/interviews", headers=mutation_headers(csrf))
+
+    with TestClient(api.app) as admin_client:
+        admin_csrf = login(admin_client, admin)
+        exported = admin_client.post(
+            "/api/admin/interviews/csv",
+            headers=mutation_headers(admin_csrf),
+            json={"participantIds": [chosen_id]},
+        )
+
+    assert exported.status_code == 200
+    assert "P-S2" in exported.text
+    assert "P-S1" not in exported.text
+
+
+def test_archiving_a_finished_interview_frees_the_participant(
+    db_session: Session,
+    api_password_service: PasswordService,
+    api_fake_engine: ApiFakeEngine,
+) -> None:
+    participant = create_account(
+        db_session,
+        api_password_service,
+        username="archive-participant",
+        role=Role.PARTICIPANT.value,
+        participant_code="P-ARCH",
+    )
+    admin = create_account(
+        db_session,
+        api_password_service,
+        username="archive-admin",
+        role=Role.ADMIN.value,
+        participant_code=None,
+    )
+
+    with TestClient(api.app) as participant_client:
+        csrf = login(participant_client, participant)
+        started = participant_client.post("/api/interviews", headers=mutation_headers(csrf))
+        first_id = started.json()["id"]
+
+    interview = db_session.get(Interview, UUID(first_id))
+    interview.status = "completed"
+    db_session.commit()
+
+    with TestClient(api.app) as participant_client:
+        csrf = login(participant_client, participant)
+        after_finishing = participant_client.post(
+            "/api/interviews", headers=mutation_headers(csrf)
+        )
+    second_id = after_finishing.json()["id"]
+    assert second_id != first_id, (
+        "a finished interview is history; asking again starts a new one"
+    )
+    assert after_finishing.json()["status"] == "active"
+
+    with TestClient(api.app) as admin_client:
+        admin_csrf = login(admin_client, admin)
+        archived = admin_client.post(
+            f"/api/admin/interviews/{first_id}/archive",
+            headers=mutation_headers(admin_csrf),
+        )
+        again = admin_client.post(
+            f"/api/admin/interviews/{first_id}/archive",
+            headers=mutation_headers(admin_csrf),
+        )
+        abandoned = admin_client.post(
+            f"/api/admin/interviews/{second_id}/archive",
+            headers=mutation_headers(admin_csrf),
+        )
+
+    assert archived.status_code == 200
+    assert archived.json()["status"] == "archived"
+    assert again.status_code == 409, "an archived interview cannot be archived twice"
+    assert abandoned.status_code == 200, (
+        "an abandoned interview can be closed out of the queue too"
+    )
+
+    with TestClient(api.app) as participant_client:
+        csrf = login(participant_client, participant)
+        assert participant_client.get("/api/interviews/current").status_code == 404
+        fresh = participant_client.post("/api/interviews", headers=mutation_headers(csrf))
+
+    assert fresh.status_code == 201
+    assert fresh.json()["id"] not in (first_id, second_id), (
+        "the participant gets a brand new interview"
+    )
+
+    with TestClient(api.app) as admin_client:
+        login(admin_client, admin)
+        listed = admin_client.get("/api/admin/interviews").json()
+    assert any(row["id"] == first_id for row in listed), "archived work stays in the record"
+
+    actions = list(db_session.scalars(select(AuditEvent.action)))
+    assert "interview.archived" in actions

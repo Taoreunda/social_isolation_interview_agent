@@ -448,9 +448,11 @@ def test_admin_creates_participant_with_one_time_generated_password(
         "participantCode": "P-002",
         "status": "active",
         "interviewStatus": "not_started",
+        "temporaryLockedUntil": None,
     }
     assigned_password = payload["assignedPassword"]
-    assert len(assigned_password) == 20
+    assert len(assigned_password) >= 10
+    assert "-" in assigned_password, "the password is derived from the research code"
     assert "passwordHash" not in response.text
 
     created = db_session.scalar(
@@ -465,6 +467,36 @@ def test_admin_creates_participant_with_one_time_generated_password(
     assert event.actor_user_id == api_admin.id
     assert event.target_id == created.id
     assert event.details == {"role": "participant"}
+
+
+def test_the_participant_listing_shows_a_temporary_lock_deadline(
+    api_admin: UserAccount,
+    api_participant: UserAccount,
+    db_session: Session,
+) -> None:
+    """An administrator has to be able to see why a participant cannot log in."""
+    deadline = datetime(2026, 9, 4, 2, 15, tzinfo=UTC)
+    api_participant.failed_login_count = 5
+    api_participant.temporary_locked_until = deadline
+    db_session.commit()
+
+    with TestClient(api.app) as client:
+        login = client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_admin.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+        assert login.status_code == 200
+
+        response = client.get("/api/admin/participants")
+
+    assert response.status_code == 200
+    row = response.json()[0]
+    assert row["status"] == "active", "the account itself is not administratively locked"
+    assert row["temporaryLockedUntil"] == deadline.isoformat().replace("+00:00", "Z")
 
 
 def test_admin_lists_participants_including_administrator_lock_state(
@@ -496,6 +528,7 @@ def test_admin_lists_participants_including_administrator_lock_state(
             "participantCode": api_participant.participant_code,
             "status": "admin_locked",
             "interviewStatus": "not_started",
+            "temporaryLockedUntil": None,
         }
     ]
 
@@ -562,7 +595,8 @@ def test_admin_password_reset_revokes_only_target_sessions_and_returns_password_
 
     assert response.status_code == 200
     assigned_password = response.json()["assignedPassword"]
-    assert len(assigned_password) == 20
+    assert len(assigned_password) >= 10
+    assert "-" in assigned_password, "the password is derived from the research code"
     db_session.refresh(api_participant)
     assert api_password_service.verify(api_participant.password_hash, assigned_password)
     sessions = db_session.scalars(select(AuthSession)).all()
@@ -856,3 +890,112 @@ def test_participant_cannot_run_administrator_mutation_with_valid_csrf(
 
     assert forbidden.status_code == 403
     assert current_user.status_code == 200
+
+
+def _sign_in_admin(client: TestClient, admin: UserAccount) -> dict[str, str]:
+    response = client.post(
+        "/api/auth/login",
+        headers={"Origin": ALLOWED_ORIGIN},
+        json={"username": admin.display_username, "password": VALID_PASSWORD},
+    )
+    assert response.status_code == 200
+    csrf = client.cookies.get("dabom_csrf")
+    assert csrf is not None
+    return {"Origin": ALLOWED_ORIGIN, "X-CSRF-Token": csrf}
+
+
+def test_creating_a_participant_allocates_the_next_research_code(
+    db_session: Session,
+    api_admin: UserAccount,
+) -> None:
+    with TestClient(api.app) as client:
+        headers = _sign_in_admin(client, api_admin)
+        first = client.post(
+            "/api/admin/participants",
+            headers=headers,
+            json={"generatePassword": True},
+        )
+        second = client.post(
+            "/api/admin/participants",
+            headers=headers,
+            json={"generatePassword": True},
+        )
+
+    assert first.status_code == 201, first.text
+    assert first.json()["participant"]["participantCode"] == "KU-001"
+    assert first.json()["participant"]["username"] == "ku-001"
+    assert second.json()["participant"]["participantCode"] == "KU-002"
+
+    assigned = first.json()["assignedPassword"]
+    assert assigned.startswith("ku-001-")
+    assert len(assigned) >= 10
+
+    with TestClient(api.app) as participant_client:
+        signed_in = participant_client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={"username": "ku-001", "password": assigned},
+        )
+    assert signed_in.status_code == 200, "the assigned password actually works"
+
+
+def test_an_explicit_code_and_username_are_still_honoured(
+    db_session: Session,
+    api_admin: UserAccount,
+) -> None:
+    with TestClient(api.app) as client:
+        headers = _sign_in_admin(client, api_admin)
+        created = client.post(
+            "/api/admin/participants",
+            headers=headers,
+            json={
+                "username": "custom-name",
+                "participantCode": "X-9",
+                "generatePassword": True,
+            },
+        )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["participant"]["participantCode"] == "X-9"
+    assert created.json()["participant"]["username"] == "custom-name"
+
+
+def test_a_disabled_participant_can_be_brought_back(
+    db_session: Session,
+    api_admin: UserAccount,
+    api_participant: UserAccount,
+) -> None:
+    with TestClient(api.app) as client:
+        headers = _sign_in_admin(client, api_admin)
+        disabled = client.post(
+            f"/api/admin/participants/{api_participant.id}/disable",
+            headers=headers,
+        )
+        enabled = client.post(
+            f"/api/admin/participants/{api_participant.id}/enable",
+            headers=headers,
+        )
+        already_active = client.post(
+            f"/api/admin/participants/{api_participant.id}/enable",
+            headers=headers,
+        )
+
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+    assert enabled.status_code == 200
+    assert enabled.json()["status"] == "active"
+    assert already_active.status_code == 409, "enabling an active account is a no-op conflict"
+
+    with TestClient(api.app) as participant_client:
+        signed_in = participant_client.post(
+            "/api/auth/login",
+            headers={"Origin": ALLOWED_ORIGIN},
+            json={
+                "username": api_participant.display_username,
+                "password": VALID_PASSWORD,
+            },
+        )
+    assert signed_in.status_code == 200, "the participant can sign in again"
+
+    actions = list(db_session.scalars(select(AuditEvent.action)))
+    assert "account.enabled" in actions

@@ -176,11 +176,14 @@ describe('HttpAppApi participant administration', () => {
       participantCode: 'P-002',
       password: 'assigned-password',
     })).resolves.toEqual({
-      id: 'participant-002',
-      username: 'participant02',
-      participantCode: 'P-002',
-      status: 'active',
-      interviewStatus: 'not_started',
+      participant: {
+        id: 'participant-002',
+        username: 'participant02',
+        participantCode: 'P-002',
+        status: 'active',
+        interviewStatus: 'not_started',
+      },
+      assignedPassword: null,
     })
 
     const [url, init] = fetcher.mock.calls[0]
@@ -278,21 +281,30 @@ describe('HttpAppApi protected interviews', () => {
     }],
   }
 
-  it('loads the current interview and starts one with CSRF only after a 404', async () => {
-    document.cookie = 'dabom_csrf=start-token; Path=/'
+  it('reports that there is no interview instead of creating one', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'not found' }), { status: 404 }))
+    const api = new HttpAppApi(fetcher)
+
+    await expect(api.getCurrentInterview()).rejects.toMatchObject({ status: 404 })
+
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(fetcher.mock.calls[0][0]).toBe('/api/interviews/current')
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'GET', credentials: 'include' })
+  })
+
+  it('starts an interview with CSRF only when asked to', async () => {
+    document.cookie = 'dabom_csrf=start-token; Path=/'
+    const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify(participantInterview), { status: 201 }))
     const api = new HttpAppApi(fetcher)
 
-    await expect(api.getCurrentInterview()).resolves.toEqual(participantInterview)
+    await expect(api.startInterview()).resolves.toEqual(participantInterview)
 
-    expect(fetcher).toHaveBeenCalledTimes(2)
-    expect(fetcher.mock.calls[0][0]).toBe('/api/interviews/current')
-    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'GET', credentials: 'include' })
-    expect(fetcher.mock.calls[1][0]).toBe('/api/interviews')
-    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: 'POST', credentials: 'include' })
-    expect(new Headers(fetcher.mock.calls[1][1]?.headers).get('X-CSRF-Token')).toBe('start-token')
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(fetcher.mock.calls[0][0]).toBe('/api/interviews')
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'POST', credentials: 'include' })
+    expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('X-CSRF-Token')).toBe('start-token')
   })
 
   it('does not start a new interview for non-404 current-interview failures', async () => {

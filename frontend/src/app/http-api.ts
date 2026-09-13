@@ -1,5 +1,7 @@
 import { ApiError } from './api-error'
 import type {
+  CreatedParticipant,
+  ExportSelection,
   AccountStatus,
   AppApi,
   CreateParticipantInput,
@@ -81,16 +83,23 @@ export class HttpAppApi implements AppApi {
     return participants.map((participant) => this.toParticipantRecord(participant))
   }
 
-  async createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord> {
+  async createParticipant(input: CreateParticipantInput): Promise<CreatedParticipant> {
+    const body: Record<string, unknown> = { generatePassword: !input.password }
+    if (input.username) body.username = input.username
+    if (input.participantCode) body.participantCode = input.participantCode
+    if (input.password) body.password = input.password
     const result = await this.requestJson<ParticipantCredentialResponse>(
       '/api/admin/participants',
       this.withCsrf({
-        body: JSON.stringify({ ...input, generatePassword: false }),
+        body: JSON.stringify(body),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       }),
     )
-    return this.toParticipantRecord(result.participant)
+    return {
+      participant: this.toParticipantRecord(result.participant),
+      assignedPassword: result.assignedPassword ?? null,
+    }
   }
 
   async resetParticipantPassword(participantId: string): Promise<PasswordResult> {
@@ -108,6 +117,10 @@ export class HttpAppApi implements AppApi {
     return { assignedPassword: result.assignedPassword }
   }
 
+  async enableParticipant(participantId: string): Promise<ParticipantRecord> {
+    return this.updateParticipantState(participantId, 'enable')
+  }
+
   async disableParticipant(participantId: string): Promise<ParticipantRecord> {
     return this.updateParticipantState(participantId, 'disable')
   }
@@ -117,18 +130,17 @@ export class HttpAppApi implements AppApi {
   }
 
   async getCurrentInterview(): Promise<ParticipantInterview> {
-    try {
-      return await this.requestJson<ParticipantInterview>(
-        '/api/interviews/current',
-        { method: 'GET' },
-      )
-    } catch (error) {
-      if (!(error instanceof ApiError) || error.status !== 404) throw error
-      return this.requestJson<ParticipantInterview>(
-        '/api/interviews',
-        this.withCsrf({ method: 'POST' }),
-      )
-    }
+    return this.requestJson<ParticipantInterview>(
+      '/api/interviews/current',
+      { method: 'GET' },
+    )
+  }
+
+  async startInterview(): Promise<ParticipantInterview> {
+    return this.requestJson<ParticipantInterview>(
+      '/api/interviews',
+      this.withCsrf({ method: 'POST' }),
+    )
   }
 
   async sendMessage(
@@ -172,10 +184,29 @@ export class HttpAppApi implements AppApi {
     )
   }
 
+  async archiveInterview(interviewId: string): Promise<InterviewDetail> {
+    return this.requestJson<InterviewDetail>(
+      `${this.adminInterviewPath(interviewId)}/archive`,
+      this.withCsrf({ method: 'POST' }),
+    )
+  }
+
   async exportInterviewCsv(interviewId: string): Promise<Blob> {
     const response = await this.request(
       `${this.adminInterviewPath(interviewId)}/csv`,
       this.withCsrf({ method: 'POST' }),
+    )
+    return response.blob()
+  }
+
+  async exportInterviewsCsv(selection: ExportSelection): Promise<Blob> {
+    const response = await this.request(
+      '/api/admin/interviews/csv',
+      this.withCsrf({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(selection),
+      }),
     )
     return response.blob()
   }
@@ -228,7 +259,7 @@ export class HttpAppApi implements AppApi {
 
   private async updateParticipantState(
     participantId: string,
-    action: 'disable' | 'unlock',
+    action: 'disable' | 'enable' | 'unlock',
   ): Promise<ParticipantRecord> {
     const participant = await this.requestJson<ParticipantAccountResponse>(
       `${this.participantPath(participantId)}/${action}`,

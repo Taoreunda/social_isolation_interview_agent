@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -10,6 +11,10 @@ from sqlalchemy import delete, or_, select, text, update
 from sqlalchemy.orm import Session, joinedload
 
 from auth.models import AuditEvent, AuthSession, UserAccount
+
+
+RESEARCH_CODE_PREFIX = "KU"
+_RESEARCH_CODE = re.compile(rf"^{RESEARCH_CODE_PREFIX}-(\d{{3,}})$")
 
 
 class AuthRepository:
@@ -56,6 +61,20 @@ class AuthRepository:
                 .order_by(UserAccount.participant_code, UserAccount.id)
             )
         )
+
+    def next_research_code(self) -> str:
+        """Return the next KU-### code, continuing the existing sequence."""
+        codes = self.session.scalars(
+            select(UserAccount.participant_code).where(
+                UserAccount.participant_code.is_not(None)
+            )
+        )
+        highest = 0
+        for code in codes:
+            match = _RESEARCH_CODE.match(code or "")
+            if match:
+                highest = max(highest, int(match.group(1)))
+        return f"{RESEARCH_CODE_PREFIX}-{highest + 1:03d}"
 
     def lock_admin_bootstrap(self) -> None:
         self.session.execute(

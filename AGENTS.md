@@ -22,8 +22,9 @@ The product has two roles only: `participant` and `admin`. Do not add public sig
 
 ## Invariants
 
+- A participant holds one current interview. An administrator archives a finished one to let the next begin; the archived record stays in the queue and in exports.
 - Participants may read and mutate only their own current interview. Participant DTOs contain visible messages, status, progress, and update time—never participant code, scorecard, diagnosis, AI rationale, review, or export data.
-- Administrators may manage pseudonymous participant accounts and read/review/export interviews. Do not expose extra identity fields beside `participant_code`.
+- Administrators may manage pseudonymous participant accounts and read/review/export interviews, including the diagnosis, criteria, summary and algorithm version. Do not expose extra identity fields beside `participant_code`, and never place any of this in a participant response.
 - Every state-changing route requires an allowed origin, authenticated cookie session, and matching CSRF cookie/header. Route guards are not authorization.
 - Persist visible user/assistant messages and scorecard state only after a successful model turn. Keep `clientTurnId` idempotency and atomic user+assistant+scorecard commits.
 - Do not persist system prompts, tool messages, provider objects, passwords, raw tokens, or transcript-bearing logs.

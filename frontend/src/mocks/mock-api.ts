@@ -1,4 +1,6 @@
 import type {
+  CreatedParticipant,
+  ExportSelection,
   AppApi,
   CreateParticipantInput,
   CurrentUser,
@@ -19,6 +21,15 @@ import {
 } from './fixtures'
 
 const CURRENT_MOCK_USER_KEY = 'dabom.mock-user'
+
+function participantPassword(participantCode: string): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  let tail = ''
+  while (`${participantCode.toLowerCase()}-${tail}`.length < 10 || tail.length < 4) {
+    tail += alphabet[Math.floor(Math.random() * alphabet.length)]
+  }
+  return `${participantCode.toLowerCase()}-${tail}`
+}
 
 export class MockAppApi implements AppApi {
   private readonly state: MockFixtureState
@@ -63,9 +74,48 @@ export class MockAppApi implements AppApi {
 
   async getCurrentInterview(): Promise<ParticipantInterview> {
     const account = this.requireParticipant()
-    const interview = this.state.interviews.find((candidate) => candidate.participantId === account.id)
+    const interview = this.currentInterviewOf(account.id)
     if (!interview) throw new ApiError(404, 'Interview not found')
     return this.toParticipantInterview(interview)
+  }
+
+  async startInterview(): Promise<ParticipantInterview> {
+    const account = this.requireParticipant()
+    const running = this.currentInterviewOf(account.id)
+    if (running && running.status === 'active') return this.toParticipantInterview(running)
+
+    const started: MockInterviewFixture = {
+      id: `interview-${(this.state.interviews.length + 1).toString().padStart(3, '0')}`,
+      participantId: account.id,
+      participantCode: account.participantCode ?? '',
+      status: 'active',
+      progress: 0,
+      reviewStatus: 'unreviewed',
+      updatedAt: '2026-08-25T09:00:00.000Z',
+      finalDiagnosis: null,
+      criteria: { A: null, B: null, C: null, D: null },
+      report: null,
+      algorithmVersion: 'react-scorecard-v1',
+      completedAt: null,
+      messages: [
+        {
+          id: 'message-001',
+          role: 'assistant',
+          content: '안녕하세요. 최근 한 달간 일상을 이야기해 주세요.',
+          createdAt: '2026-08-25T09:00:00.000Z',
+        },
+      ],
+      scorecard: [],
+    }
+    this.state.interviews.push(started)
+    return this.toParticipantInterview(started)
+  }
+
+  private currentInterviewOf(participantId: string): MockInterviewFixture | undefined {
+    const owned = this.state.interviews.filter(
+      (candidate) => candidate.participantId === participantId && candidate.status !== 'archived',
+    )
+    return owned.find((candidate) => candidate.status === 'active') ?? owned[owned.length - 1]
   }
 
   async sendMessage(
@@ -110,27 +160,41 @@ export class MockAppApi implements AppApi {
       .map((account) => this.toParticipantRecord(account))
   }
 
-  async createParticipant(input: CreateParticipantInput): Promise<ParticipantRecord> {
+  async createParticipant(input: CreateParticipantInput): Promise<CreatedParticipant> {
     this.requireAdmin()
-    if (this.state.accounts.some((account) => account.participantCode === input.participantCode)) {
+    const participantCode = input.participantCode || this.nextResearchCode()
+    const username = input.username || participantCode.toLowerCase()
+    if (this.state.accounts.some((account) => account.participantCode === participantCode)) {
       throw new ApiError(409, 'Participant code already exists')
     }
-    if (this.state.accounts.some((account) => account.username === input.username)) {
+    if (this.state.accounts.some((account) => account.username === username)) {
       throw new ApiError(409, 'Username already exists')
     }
 
+    const assignedPassword = input.password ?? participantPassword(participantCode)
     const account: MockAccountFixture = {
       id: `participant-${(this.state.accounts.filter((item) => item.role === 'participant').length + 1)
         .toString()
         .padStart(3, '0')}`,
-      username: input.username,
-      passwordVerifier: await this.passwordVerifier(input.password),
+      username,
+      passwordVerifier: await this.passwordVerifier(assignedPassword),
       role: 'participant',
-      participantCode: input.participantCode,
+      participantCode,
       status: 'active',
     }
     this.state.accounts.push(account)
-    return this.toParticipantRecord(account)
+    return {
+      participant: this.toParticipantRecord(account),
+      assignedPassword: input.password ? null : assignedPassword,
+    }
+  }
+
+  private nextResearchCode(): string {
+    const highest = this.state.accounts.reduce((top, account) => {
+      const match = /^KU-(\d{3,})$/.exec(account.participantCode ?? '')
+      return match ? Math.max(top, Number(match[1])) : top
+    }, 0)
+    return `KU-${String(highest + 1).padStart(3, '0')}`
   }
 
   async resetParticipantPassword(participantId: string): Promise<PasswordResult> {
@@ -139,6 +203,14 @@ export class MockAppApi implements AppApi {
     const assignedPassword = `reset-${account.participantCode}-password`
     account.passwordVerifier = await this.passwordVerifier(assignedPassword)
     return { assignedPassword }
+  }
+
+  async enableParticipant(participantId: string): Promise<ParticipantRecord> {
+    this.requireAdmin()
+    const account = this.findParticipant(participantId)
+    if (account.status !== 'disabled') throw new ApiError(409, 'Account is not disabled')
+    account.status = 'active'
+    return this.toParticipantRecord(account)
   }
 
   async disableParticipant(participantId: string): Promise<ParticipantRecord> {
@@ -181,31 +253,60 @@ export class MockAppApi implements AppApi {
       if (row.aiStatus === 'recorded') {
         throw new ApiError(400, 'Recorded items can only be approved')
       }
-      if (!input.expertStatus || !input.rationale) {
-        throw new ApiError(400, 'Override needs an expert status and rationale')
+      if (!input.expertStatus) {
+        throw new ApiError(400, 'Override needs an expert status')
       }
       if (input.expertStatus === row.aiStatus) {
         throw new ApiError(400, 'Override must change the AI decision')
       }
       row.expertStatus = input.expertStatus
-      row.expertRationale = input.rationale
+      row.expertRationale = input.rationale?.trim() || null
     } else {
       row.expertStatus = row.aiStatus
-      row.expertRationale = input.rationale ?? null
+      row.expertRationale = input.rationale?.trim() || null
     }
     interview.reviewStatus = this.reviewStatus(interview)
     return this.clone(interview)
   }
 
-  async exportInterviewCsv(interviewId: string): Promise<Blob> {
+  async archiveInterview(interviewId: string): Promise<InterviewDetail> {
     this.requireAdmin()
     const interview = this.findInterview(interviewId)
+    if (interview.status !== 'completed') throw new ApiError(409, 'Interview is not finished')
+    interview.status = 'archived'
+    return this.clone(interview)
+  }
+
+  async exportInterviewCsv(interviewId: string): Promise<Blob> {
+    this.requireAdmin()
+    return this.csvBlob([this.findInterview(interviewId)])
+  }
+
+  async exportInterviewsCsv(selection: ExportSelection): Promise<Blob> {
+    this.requireAdmin()
+    const byInterview = new Set(selection.interviewIds ?? [])
+    const byParticipant = new Set(selection.participantIds ?? [])
+    let chosen = this.state.interviews
+    if (byInterview.size) chosen = chosen.filter((row) => byInterview.has(row.id))
+    if (byParticipant.size) chosen = chosen.filter((row) => byParticipant.has(row.participantId))
+    return this.csvBlob(chosen)
+  }
+
+  private csvBlob(interviews: MockInterviewFixture[]): Blob {
     const header = [
       'interviewId',
       'participantCode',
       'status',
       'progress',
       'reviewStatus',
+      'finalDiagnosis',
+      'criteriaA',
+      'criteriaB',
+      'criteriaC',
+      'criteriaD',
+      'completedAt',
+      'algorithmVersion',
+      'report',
       'questionId',
       'question',
       'value',
@@ -213,19 +314,27 @@ export class MockAppApi implements AppApi {
       'expertStatus',
       'expertRationale',
     ]
-    const rows = interview.scorecard.map((row) => [
+    const rows = interviews.flatMap((interview) => interview.scorecard.map((row) => [
       interview.id,
       interview.participantCode,
       interview.status,
       interview.progress,
       interview.reviewStatus,
+      interview.finalDiagnosis,
+      interview.criteria.A,
+      interview.criteria.B,
+      interview.criteria.C,
+      interview.criteria.D,
+      interview.completedAt,
+      interview.algorithmVersion,
+      interview.report,
       row.questionId,
       row.question,
       row.value,
       row.aiStatus,
       row.expertStatus,
       row.expertRationale,
-    ].map(this.csvValue).join(','))
+    ].map(this.csvValue).join(',')))
     return new Blob([[header.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8' })
   }
 
@@ -334,7 +443,7 @@ export class MockAppApi implements AppApi {
     if (signal?.aborted) throw new DOMException('Login aborted', 'AbortError')
   }
 
-  private csvValue(value: string | number | null): string {
+  private csvValue(value: string | number | boolean | null): string {
     if (value === null) return ''
     const text = String(value)
     return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text

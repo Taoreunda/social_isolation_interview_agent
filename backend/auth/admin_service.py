@@ -90,6 +90,15 @@ class AccountAdministrationService:
         with self.session.begin():
             return self.repository.list_participants()
 
+    def allocate_research_code(self) -> str:
+        """Reserve the next code in the research sequence.
+
+        Runs in its own transaction so the caller's session is left clean for
+        the insert that follows.
+        """
+        with self.session.begin():
+            return self.repository.next_research_code()
+
     def create_participant(
         self,
         *,
@@ -129,6 +138,12 @@ class AccountAdministrationService:
         except IntegrityError as exc:
             raise AccountConflict from exc
         return account
+
+    def research_code_of(self, participant_id: UUID) -> str | None:
+        """Return a participant's research code without opening a transaction."""
+        with self.session.begin():
+            account = self.repository.get_account_for_update(participant_id)
+            return account.participant_code if account else None
 
     def reset_participant_password(
         self,
@@ -180,6 +195,35 @@ class AccountAdministrationService:
                 occurred_at=now,
             )
         return account
+
+    def enable_participant(
+        self,
+        *,
+        actor_user_id: UUID,
+        participant_id: UUID,
+    ) -> UserAccount:
+        """Bring a disabled participant back into the study."""
+        now = self.clock()
+        with self.session.begin():
+            account = self.repository.get_participant_for_update(participant_id)
+            if account is None:
+                raise AccountNotFound
+            if account.status != AccountStatus.DISABLED.value:
+                raise AccountStateConflict
+            account.status = AccountStatus.ACTIVE.value
+            account.failed_login_count = 0
+            account.failure_window_started_at = None
+            account.temporary_locked_until = None
+            account.lock_stage = 0
+            account.updated_at = now
+            self.repository.add_audit_event(
+                actor_user_id=actor_user_id,
+                action="account.enabled",
+                target_type="user_account",
+                target_id=account.id,
+                occurred_at=now,
+            )
+            return account
 
     def unlock_participant(
         self,

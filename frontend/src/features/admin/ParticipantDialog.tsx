@@ -1,4 +1,4 @@
-import { Copy, KeyRound, RefreshCw, UserPlus } from 'lucide-react'
+import { Copy, KeyRound, UserPlus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useApi } from '@/app/api-context'
@@ -19,21 +19,13 @@ interface ParticipantDialogProps {
   participant?: ParticipantRecord
 }
 
-const passwordCharacters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%'
-
-function generatePassword(): string {
-  const values = new Uint32Array(18)
-  crypto.getRandomValues(values)
-  return Array.from(values, (value) => passwordCharacters[value % passwordCharacters.length]).join('')
-}
-
 export function ParticipantDialog({ mode, onOpenChange, onParticipantCreated, open, participant }: ParticipantDialogProps) {
   const api = useApi()
   const isCreate = mode === 'create'
   const [username, setUsername] = useState('')
   const [participantCode, setParticipantCode] = useState('')
-  const [password, setPassword] = useState(() => isCreate ? generatePassword() : '')
   const [revealedPassword, setRevealedPassword] = useState<string | null>(null)
+  const [revealedFor, setRevealedFor] = useState<ParticipantRecord | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [clipboardState, setClipboardState] = useState<ClipboardState>('idle')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -53,8 +45,8 @@ export function ParticipantDialog({ mode, onOpenChange, onParticipantCreated, op
     operation.current += 1
     setUsername('')
     setParticipantCode('')
-    setPassword('')
     setRevealedPassword(null)
+    setRevealedFor(null)
     setError(null)
     setClipboardState('idle')
     setIsSubmitting(false)
@@ -65,18 +57,9 @@ export function ParticipantDialog({ mode, onOpenChange, onParticipantCreated, op
     onOpenChange(nextOpen)
   }
 
-  function regeneratePassword(): void {
-    setPassword(generatePassword())
-    setError(null)
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     if (inFlight.current) return
-    if (isCreate && (!username.trim() || !participantCode.trim() || password.length < 16)) {
-      setError('입력 내용을 확인하세요')
-      return
-    }
 
     const currentOperation = ++operation.current
     inFlight.current = true
@@ -84,13 +67,18 @@ export function ParticipantDialog({ mode, onOpenChange, onParticipantCreated, op
     setIsSubmitting(true)
     try {
       if (isCreate) {
-        const created = await api.createParticipant({ username: username.trim(), participantCode: participantCode.trim(), password })
+        const created = await api.createParticipant({
+          username: username.trim() || undefined,
+          participantCode: participantCode.trim() || undefined,
+        })
         if (!mounted.current || currentOperation !== operation.current) return
-        onParticipantCreated(created)
-        setRevealedPassword(password)
+        onParticipantCreated(created.participant)
+        setRevealedFor(created.participant)
+        setRevealedPassword(created.assignedPassword ?? '')
       } else if (participant) {
         const result = await api.resetParticipantPassword(participant.id)
         if (!mounted.current || currentOperation !== operation.current) return
+        setRevealedFor(participant)
         setRevealedPassword(result.assignedPassword)
       }
     } catch {
@@ -122,7 +110,13 @@ export function ParticipantDialog({ mode, onOpenChange, onParticipantCreated, op
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         {revealedPassword ? (
           <div className="space-y-3">
+            {revealedFor && <dl className="grid gap-1 text-sm">
+              <div className="flex gap-2"><dt className="text-muted-foreground">참여자 코드</dt><dd className="font-medium">{revealedFor.participantCode}</dd></div>
+              <div className="flex gap-2"><dt className="text-muted-foreground">사용자 이름</dt><dd className="font-medium">{revealedFor.username}</dd></div>
+            </dl>}
+            <p className="text-sm text-muted-foreground">할당 비밀번호</p>
             <output aria-label="할당된 비밀번호" className="block break-all border border-border px-3 py-2 font-mono text-sm">{revealedPassword}</output>
+            <p className="text-sm text-muted-foreground">이 화면을 닫으면 다시 볼 수 없습니다.</p>
             <Button onClick={() => void copyPassword()} type="button" variant="outline"><Copy aria-hidden="true" />복사</Button>
             {clipboardState !== 'idle' && <p aria-live="polite" role="status">{clipboardState === 'success' ? '복사했습니다' : '복사하지 못했습니다'}</p>}
           </div>
@@ -130,20 +124,16 @@ export function ParticipantDialog({ mode, onOpenChange, onParticipantCreated, op
           <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
             {isCreate ? (
               <>
-                <div className="space-y-2">
-                  <Label htmlFor="participant-username">사용자 이름</Label>
-                  <Input autoComplete="off" id="participant-username" onChange={(event) => setUsername(event.target.value)} value={username} />
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  비워 두면 다음 연구 코드와 비밀번호를 자동으로 배정합니다.
+                </p>
                 <div className="space-y-2">
                   <Label htmlFor="participant-code">참여자 코드</Label>
-                  <Input autoComplete="off" id="participant-code" onChange={(event) => setParticipantCode(event.target.value)} value={participantCode} />
+                  <Input autoComplete="off" id="participant-code" onChange={(event) => setParticipantCode(event.target.value)} placeholder="자동 배정" value={participantCode} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="assigned-password">할당 비밀번호</Label>
-                  <div className="flex gap-2">
-                    <Input autoComplete="off" className="min-w-0 font-mono" id="assigned-password" onChange={(event) => setPassword(event.target.value)} value={password} />
-                    <Button onClick={regeneratePassword} type="button" variant="outline"><RefreshCw aria-hidden="true" />비밀번호 생성</Button>
-                  </div>
+                  <Label htmlFor="participant-username">사용자 이름</Label>
+                  <Input autoComplete="off" id="participant-username" onChange={(event) => setUsername(event.target.value)} placeholder="자동 배정 (코드의 소문자)" value={username} />
                 </div>
               </>
             ) : <p className="text-sm">{participant?.participantCode}</p>}
