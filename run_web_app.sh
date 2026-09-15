@@ -10,6 +10,14 @@ WEB_LOG="$ROOT_DIR/logs/frontend.log"
 cd "$ROOT_DIR"
 mkdir -p "$ROOT_DIR/logs"
 
+# ./dev.sh starts PostgreSQL, applies migrations, and passes DATABASE_URL here.
+# Run directly, this script would start an API that cannot reach its database,
+# so it hands over to ./dev.sh instead.
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "DATABASE_URL is not set; starting through ./dev.sh, which prepares the database."
+  exec "$ROOT_DIR/dev.sh" start "$@"
+fi
+
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv is required but was not found in PATH." >&2
   exit 1
