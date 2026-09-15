@@ -32,7 +32,7 @@ export function AppRoutes() {
       </Route>
       <Route element={<RequireRole role="admin"><AdminLayout /></RequireRole>}>
         <Route path="/admin" element={<AdminDashboardPage />} />
-        <Route path="/admin/interview" element={<InterviewPage />} />
+        <Route path="/admin/interview" element={<InterviewPage allowRestart />} />
         <Route path="/admin/participants" element={<ParticipantsPage />} />
         <Route path="/admin/interviews/:interviewId" element={<InterviewReviewPage />} />
         <Route path="/admin/interviews/:interviewId/transcript" element={<InterviewTranscriptPage />} />

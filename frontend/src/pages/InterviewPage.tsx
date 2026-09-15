@@ -1,10 +1,11 @@
-import { AlertCircle, Play, RefreshCw } from 'lucide-react'
+import { AlertCircle, Play, RefreshCw, RotateCcw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useApi } from '@/app/api-context'
 import { hasApiStatus } from '@/app/api-error'
 import type { ParticipantInterview } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Chat } from '@/features/interview/Chat'
 
 type InterviewPhase =
@@ -27,13 +28,16 @@ function phaseFor(interview: ParticipantInterview): InterviewPhase {
   return interview.status === 'completed' ? 'completed' : 'active'
 }
 
-export function InterviewPage() {
+export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean }) {
   const api = useApi()
   const [answer, setAnswer] = useState('')
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
   const [interview, setInterview] = useState<ParticipantInterview | null>(null)
   const [loadError, setLoadError] = useState('인터뷰를 불러오지 못했습니다')
   const [phase, setPhase] = useState<InterviewPhase>('loading')
+  const [confirmingRestart, setConfirmingRestart] = useState(false)
+  const [restarting, setRestarting] = useState(false)
+  const [restartError, setRestartError] = useState<string | null>(null)
   const mounted = useRef(false)
   const requestGeneration = useRef(0)
   const inFlight = useRef(false)
@@ -87,6 +91,40 @@ export function InterviewPage() {
       setPhase('start_error')
     } finally {
       inFlight.current = false
+    }
+  }
+
+  async function restartInterview(): Promise<void> {
+    if (!interview || inFlight.current) return
+    const operation = ++requestGeneration.current
+    inFlight.current = true
+    setRestarting(true)
+    setRestartError(null)
+    let archived = false
+    try {
+      await api.archiveInterview(interview.id)
+      archived = true
+      const detail = await api.startInterview()
+      if (!mounted.current || operation !== requestGeneration.current) return
+      setAnswer('')
+      setPendingMessage(null)
+      pendingTurn.current = null
+      setInterview(detail)
+      setPhase(phaseFor(detail))
+      setConfirmingRestart(false)
+    } catch {
+      if (!mounted.current || operation !== requestGeneration.current) return
+      if (archived) {
+        // The old run is already filed away; offer a plain start instead of a retry that would conflict.
+        setConfirmingRestart(false)
+        setInterview(null)
+        setPhase('start_error')
+        return
+      }
+      setRestartError('다시 시작하지 못했습니다')
+    } finally {
+      inFlight.current = false
+      if (mounted.current) setRestarting(false)
     }
   }
 
@@ -196,7 +234,21 @@ export function InterviewPage() {
   const retrying = phase === 'send_error'
   return (
     <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 py-6">
-      <h1 className="text-xl font-semibold">인터뷰 진행 중</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold">인터뷰 진행 중</h1>
+        {allowRestart && <Button
+          className="ml-auto min-h-11 sm:min-h-9"
+          disabled={phase === 'sending'}
+          onClick={() => {
+            setRestartError(null)
+            setConfirmingRestart(true)
+          }}
+          type="button"
+          variant="outline"
+        >
+          <RotateCcw aria-hidden="true" />처음부터 다시
+        </Button>}
+      </div>
       {retrying && <p className="mt-3 inline-flex items-center gap-2" role="alert"><AlertCircle aria-hidden="true" className="size-4" />답변을 보내지 못했습니다</p>}
       <Chat
         answer={answer}
@@ -209,6 +261,24 @@ export function InterviewPage() {
         retrying={retrying}
         showComposer
       />
+      <Dialog
+        onOpenChange={(open) => { if (!open && !restarting) setConfirmingRestart(false) }}
+        open={confirmingRestart}
+      >
+        <DialogContent>
+          <DialogHeader><DialogTitle>처음부터 다시</DialogTitle></DialogHeader>
+          <p className="text-sm leading-6">지금 인터뷰는 보관되고 새 인터뷰가 시작됩니다.</p>
+          {restartError && <p className="inline-flex items-center gap-2" role="alert">
+            <AlertCircle aria-hidden="true" className="size-4" />{restartError}
+          </p>}
+          <DialogFooter>
+            <Button disabled={restarting} onClick={() => setConfirmingRestart(false)} type="button" variant="outline">취소</Button>
+            <Button aria-busy={restarting} disabled={restarting} onClick={() => void restartInterview()} type="button">
+              <RotateCcw aria-hidden="true" />다시 시작
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }

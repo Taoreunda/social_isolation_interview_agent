@@ -429,3 +429,64 @@ describe('starting an interview', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('인터뷰를 시작하지 못했습니다')
   })
 })
+
+describe('starting an interview over', () => {
+  function renderRestartable(api: AppApi) {
+    return render(<ApiProvider api={api}><InterviewPage allowRestart /></ApiProvider>)
+  }
+
+  it('lets an administrator start over from a running interview', async () => {
+    const fresh = cloneInterview({
+      ...interview,
+      id: 'interview-002',
+      messages: [{ ...interview.messages[0], id: 'message-new', content: '새로 시작합니다.' }],
+    })
+    const archiveInterview = vi.fn().mockResolvedValue({})
+    const startInterview = vi.fn().mockResolvedValue(fresh)
+    const api = createApi({ archiveInterview, startInterview })
+    const user = userEvent.setup()
+    renderRestartable(api)
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
+
+    await user.click(screen.getByRole('button', { name: '처음부터 다시' }))
+    await user.click(await screen.findByRole('button', { name: '다시 시작' }))
+
+    await waitFor(() => expect(startInterview).toHaveBeenCalledOnce())
+    expect(archiveInterview).toHaveBeenCalledWith('interview-001')
+    expect(archiveInterview.mock.invocationCallOrder[0])
+      .toBeLessThan(startInterview.mock.invocationCallOrder[0])
+    expect(await screen.findByText('새로 시작합니다.')).toBeInTheDocument()
+  })
+
+  it('keeps the running interview when the administrator cancels', async () => {
+    const api = createApi({ archiveInterview: vi.fn() })
+    const user = userEvent.setup()
+    renderRestartable(api)
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
+
+    await user.click(screen.getByRole('button', { name: '처음부터 다시' }))
+    await user.click(await screen.findByRole('button', { name: '취소' }))
+
+    expect(api.archiveInterview).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('답변 입력')).toBeInTheDocument()
+  })
+
+  it('does not offer a participant a way to start over', async () => {
+    renderInterview(createApi())
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
+
+    expect(screen.queryByRole('button', { name: '처음부터 다시' })).not.toBeInTheDocument()
+  })
+
+  it('says so when starting over fails', async () => {
+    const api = createApi({ archiveInterview: vi.fn().mockRejectedValue(new ApiError(503, '사용할 수 없음')) })
+    const user = userEvent.setup()
+    renderRestartable(api)
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
+
+    await user.click(screen.getByRole('button', { name: '처음부터 다시' }))
+    await user.click(await screen.findByRole('button', { name: '다시 시작' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('다시 시작하지 못했습니다')
+  })
+})
