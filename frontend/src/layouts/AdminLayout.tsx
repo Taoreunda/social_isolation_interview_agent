@@ -28,7 +28,7 @@ export function AdminLayout() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="flex min-w-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-        <NavLink className="shrink-0 font-semibold text-foreground no-underline" to="/admin">Dabom</NavLink>
+        <NavLink className="shrink-0 font-semibold text-foreground no-underline" to="/admin">고립 챗봇</NavLink>
         <nav aria-label="관리자 탐색" className="order-3 flex w-full items-center gap-1 sm:order-none sm:w-auto">
           {navigation.map(({ to, label, icon: Icon }) => (
             <NavLink

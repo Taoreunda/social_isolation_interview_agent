@@ -22,7 +22,7 @@ export function ParticipantLayout() {
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex min-w-0 flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-        <NavLink className="shrink-0 font-semibold text-foreground no-underline" to="/interview">Dabom</NavLink>
+        <NavLink className="shrink-0 font-semibold text-foreground no-underline" to="/interview">고립 챗봇</NavLink>
         <nav aria-label="참여자 탐색" className="order-3 flex w-full items-center gap-1 sm:order-none sm:w-auto">
           <NavLink
             className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"
