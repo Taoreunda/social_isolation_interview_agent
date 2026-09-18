@@ -204,19 +204,17 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
 
   if (phase === 'completed') {
     return (
-      <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 py-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold">완료했습니다</h1>
-          <Button
-            className="ml-auto min-h-11 sm:min-h-9"
+      <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4">
+        <Chat
+          actions={<Button
+            className="min-h-11 sm:min-h-9"
             onClick={() => void startInterview()}
+            size="sm"
             type="button"
             variant="outline"
           >
             <Play aria-hidden="true" />새 인터뷰 시작
-          </Button>
-        </div>
-        <Chat
+          </Button>}
           answer=""
           isSending={false}
           messages={interview.messages}
@@ -226,6 +224,7 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
           progress={interview.progress}
           retrying={false}
           showComposer={false}
+          title={<h1 className="shrink-0 text-sm font-semibold">완료했습니다</h1>}
         />
       </main>
     )
@@ -233,24 +232,23 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
 
   const retrying = phase === 'send_error'
   return (
-    <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 py-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">인터뷰 진행 중</h1>
-        {allowRestart && <Button
-          className="ml-auto min-h-11 sm:min-h-9"
+    <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4">
+      {retrying && <p className="mb-3 inline-flex items-center gap-2 text-sm" role="alert"><AlertCircle aria-hidden="true" className="size-4" />답변을 보내지 못했습니다</p>}
+      <Chat
+        actions={allowRestart ? <Button
+          className="min-h-11 shrink-0 text-muted-foreground sm:min-h-9"
           disabled={phase === 'sending'}
           onClick={() => {
             setRestartError(null)
             setConfirmingRestart(true)
           }}
+          size="sm"
           type="button"
-          variant="outline"
+          variant="ghost"
         >
           <RotateCcw aria-hidden="true" />처음부터 다시
-        </Button>}
-      </div>
-      {retrying && <p className="mt-3 inline-flex items-center gap-2" role="alert"><AlertCircle aria-hidden="true" className="size-4" />답변을 보내지 못했습니다</p>}
-      <Chat
+        </Button> : undefined}
+        title={<h1 className="shrink-0 text-sm font-semibold">인터뷰 진행 중</h1>}
         answer={answer}
         isSending={phase === 'sending'}
         messages={interview.messages}

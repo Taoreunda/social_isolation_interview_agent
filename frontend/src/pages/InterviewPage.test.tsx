@@ -490,3 +490,64 @@ describe('starting an interview over', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('다시 시작하지 못했습니다')
   })
 })
+
+describe('chat layout', () => {
+  it('keeps a short conversation next to the composer instead of floating at the top', async () => {
+    renderInterview(createApi())
+    await screen.findByLabelText('답변 입력')
+
+    const list = screen.getByRole('list', { name: '인터뷰 대화' })
+    expect(list.parentElement).toHaveClass('flex', 'flex-col', 'flex-1', 'overflow-y-auto')
+    expect(list).toHaveClass('mt-auto')
+  })
+
+  it('puts the title, progress and controls on one strip', async () => {
+    render(<ApiProvider api={createApi()}><InterviewPage allowRestart /></ApiProvider>)
+    await screen.findByLabelText('답변 입력')
+
+    const strip = screen.getByRole('heading', { name: '인터뷰 진행 중' }).parentElement!
+    expect(within(strip).getByRole('progressbar', { name: '진행률' })).toBeInTheDocument()
+    expect(within(strip).getByText('40%')).toBeInTheDocument()
+    expect(within(strip).getByRole('button', { name: '처음부터 다시' })).toBeInTheDocument()
+  })
+
+  it('sends on Enter and keeps Shift+Enter for a new line', async () => {
+    const api = createApi()
+    const user = userEvent.setup()
+    renderInterview(api)
+    const input = await screen.findByLabelText('답변 입력')
+
+    await user.type(input, '첫 줄{Shift>}{Enter}{/Shift}둘째 줄')
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    expect(input).toHaveValue('첫 줄\n둘째 줄')
+
+    await user.type(input, '{Enter}')
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('interview-001', expect.any(String), '첫 줄\n둘째 줄'))
+  })
+
+  it('does not send while Korean input is still being composed', async () => {
+    const api = createApi()
+    renderInterview(api)
+    const input = await screen.findByLabelText('답변 입력')
+
+    fireEvent.change(input, { target: { value: '작성 중' } })
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+
+    expect(api.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('shows the generating notice in the interviewer column', async () => {
+    const pending = deferred<ParticipantInterview>()
+    const api = createApi({ sendMessage: vi.fn().mockReturnValue(pending.promise) })
+    const user = userEvent.setup()
+    renderInterview(api)
+    await user.type(await screen.findByLabelText('답변 입력'), '응답')
+    await user.click(screen.getByRole('button', { name: '답변 전송' }))
+
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent('답변을 생성하는 중')
+    expect(screen.getByRole('list', { name: '인터뷰 대화' })).toContainElement(notice)
+
+    await act(async () => pending.resolve(cloneInterview()))
+  })
+})
