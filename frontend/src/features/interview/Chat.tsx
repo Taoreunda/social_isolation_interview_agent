@@ -105,13 +105,13 @@ export function Chat({
         <div className="min-w-0 flex-1">
           <label className="sr-only" htmlFor="interview-answer">답변 입력</label>
           <Textarea
-            className="max-h-40 min-h-11"
+            className="h-16 min-h-16 field-sizing-fixed resize-none"
             disabled={isSending || retrying}
             id="interview-answer"
             onChange={(event) => onAnswerChange(event.target.value)}
             onKeyDown={submitOnEnter}
             placeholder="답변 입력"
-            rows={1}
+            rows={2}
             value={answer}
           />
         </div>

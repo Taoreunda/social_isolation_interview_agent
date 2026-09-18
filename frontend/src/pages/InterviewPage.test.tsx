@@ -511,6 +511,15 @@ describe('chat layout', () => {
     expect(within(strip).getByRole('button', { name: '처음부터 다시' })).toBeInTheDocument()
   })
 
+  it('keeps the composer two lines tall instead of growing with the text', async () => {
+    renderInterview(createApi())
+    const input = await screen.findByLabelText('답변 입력')
+
+    expect(input).toHaveAttribute('rows', '2')
+    expect(input).toHaveClass('field-sizing-fixed', 'resize-none')
+    expect(input).not.toHaveClass('field-sizing-content')
+  })
+
   it('sends on Enter and keeps Shift+Enter for a new line', async () => {
     const api = createApi()
     const user = userEvent.setup()
