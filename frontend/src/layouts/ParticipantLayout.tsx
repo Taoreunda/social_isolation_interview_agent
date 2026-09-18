@@ -38,6 +38,15 @@ export function ParticipantLayout() {
             <KeyRound aria-hidden="true" className="size-4" />
             계정
           </NavLink>
+          {user?.role === 'admin' && (
+            <NavLink
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"
+              to="/admin"
+            >
+              <ClipboardList aria-hidden="true" className="size-4" />
+              검토
+            </NavLink>
+          )}
         </nav>
         <div className="ml-auto flex min-w-0 max-w-full items-center gap-2 text-sm">
           <span className="min-w-0 truncate" title={user?.username}>{user?.username}</span>

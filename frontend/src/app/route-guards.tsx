@@ -13,8 +13,9 @@ export function RequireGuest({ children }: { children: ReactNode }) {
   return user ? <Navigate to={homeFor(user.role)} replace /> : children
 }
 
-export function RequireRole({ role, children }: { role: Role; children: ReactNode }) {
+export function RequireRole({ role, children }: { role: Role | Role[]; children: ReactNode }) {
   const { user } = useSession()
   if (!user) return <Navigate to="/login" replace />
-  return user.role === role ? children : <Navigate to={homeFor(user.role)} replace />
+  const allowed = Array.isArray(role) ? role : [role]
+  return allowed.includes(user.role) ? children : <Navigate to={homeFor(user.role)} replace />
 }

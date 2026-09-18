@@ -73,14 +73,14 @@ export class MockAppApi implements AppApi {
   }
 
   async getCurrentInterview(): Promise<ParticipantInterview> {
-    const account = this.requireParticipant()
+    const account = this.requireInterviewSubject()
     const interview = this.currentInterviewOf(account.id)
     if (!interview) throw new ApiError(404, 'Interview not found')
     return this.toParticipantInterview(interview)
   }
 
   async startInterview(): Promise<ParticipantInterview> {
-    const account = this.requireParticipant()
+    const account = this.requireInterviewSubject()
     const running = this.currentInterviewOf(account.id)
     if (running && running.status === 'active') return this.toParticipantInterview(running)
 
@@ -123,7 +123,7 @@ export class MockAppApi implements AppApi {
     clientTurnId: string,
     content: string,
   ): Promise<ParticipantInterview> {
-    const account = this.requireParticipant()
+    const account = this.requireInterviewSubject()
     const interview = this.findInterview(interviewId)
     if (interview.participantId !== account.id) throw new ApiError(403, 'Interview is not available')
 
@@ -357,9 +357,11 @@ export class MockAppApi implements AppApi {
     return account
   }
 
-  private requireParticipant(): MockAccountFixture {
+  private requireInterviewSubject(): MockAccountFixture {
     const account = this.requireCurrentAccount()
-    if (account.role !== 'participant') throw new ApiError(403, 'Participant access required')
+    if (account.role !== 'participant' && account.role !== 'admin') {
+      throw new ApiError(403, 'Interview access required')
+    }
     return account
   }
 
