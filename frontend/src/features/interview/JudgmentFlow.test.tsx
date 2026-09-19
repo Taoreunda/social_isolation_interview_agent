@@ -69,3 +69,28 @@ describe('JudgmentFlow', () => {
     expect(screen.getByText('2 / 13 기입')).toBeInTheDocument()
   })
 })
+
+describe('JudgmentFlow labels', () => {
+  it('names each criterion so A to D mean something', () => {
+    render(<JudgmentFlow detail={detailWith(order.map((id) => row(id)))} />)
+
+    const criteria = screen.getByRole('list', { name: '기준' })
+    expect(within(criteria).getByText('칩거')).toBeInTheDocument()
+    expect(within(criteria).getByText('상호작용 결핍')).toBeInTheDocument()
+    expect(within(criteria).getByText('지지 결핍')).toBeInTheDocument()
+    expect(within(criteria).getByText('고통·기능 손상')).toBeInTheDocument()
+  })
+
+  it('shows the cut-off next to every question', () => {
+    render(<JudgmentFlow detail={detailWith(order.map((id) => row(id)))} />)
+
+    const steps = within(screen.getByRole('list', { name: '판정 흐름' })).getAllByRole('listitem')
+    expect(steps[0]).toHaveTextContent('예 → 긍정')
+    expect(steps[1]).toHaveTextContent('주 4회 미만 → 긍정')
+    expect(steps[2]).toHaveTextContent('6개월 이상 → 긍정')
+    expect(steps[3]).toHaveTextContent('0명 → 긍정')
+    expect(steps[7]).toHaveTextContent('5점 이상 → 긍정')
+    expect(steps[8]).toHaveTextContent('D1 긍정일 때만')
+    expect(steps[11]).toHaveTextContent('판정 없음')
+  })
+})

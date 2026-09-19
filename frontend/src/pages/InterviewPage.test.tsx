@@ -590,6 +590,19 @@ describe('debug mode', () => {
     await waitFor(() => expect(api.getInterview).toHaveBeenCalledTimes(2))
   })
 
+  it('docks the panel to the right edge as a sidebar', async () => {
+    render(<ApiProvider api={createApi()}><InterviewPage adminTools debug /></ApiProvider>)
+
+    const panel = await screen.findByRole('region', { name: '디버깅' })
+    const main = screen.getByRole('main')
+    expect(main.lastElementChild).toBe(panel)
+    expect(main).toHaveClass('lg:grid')
+    expect(main).not.toHaveClass('max-w-6xl', 'max-w-3xl')
+    expect(panel).toHaveClass('lg:border-l', 'lg:overflow-y-auto')
+    const chatColumn = screen.getByRole('list', { name: '인터뷰 대화' }).closest('[data-chat-column]')
+    expect(chatColumn).toHaveClass('max-w-3xl', 'mx-auto')
+  })
+
   it('shows nothing of the sort while debugging is off, even to an administrator', async () => {
     const api = createApi()
     render(<ApiProvider api={api}><InterviewPage adminTools /></ApiProvider>)

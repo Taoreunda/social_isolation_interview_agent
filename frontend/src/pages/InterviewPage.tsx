@@ -231,13 +231,18 @@ export function InterviewPage({ adminTools = false, debug = false }: { adminTool
 
   if (!interview) return null
 
+  // With the panel open the page becomes two columns: the chat centred in what
+  // remains, the panel a sidebar on the right edge running the full height.
   const mainClass = showTrace
-    ? 'mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-4 pt-4 pb-4 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-6'
+    ? 'flex min-h-0 w-full flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_26rem] lg:grid-rows-[minmax(0,1fr)]'
     : 'mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4'
+  const chatColumnClass = showTrace
+    ? 'mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4'
+    : 'flex min-h-0 flex-1 flex-col'
   const tracePanel = showTrace ? (
     <section
       aria-label="디버깅"
-      className="mt-4 flex max-h-72 min-h-0 flex-col border-t border-border pt-4 lg:mt-0 lg:max-h-none lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+      className="flex max-h-80 min-h-0 flex-col border-t border-border bg-muted/30 px-4 pt-4 pb-4 lg:max-h-none lg:border-t-0 lg:border-l lg:overflow-y-auto lg:px-5"
     >
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold">디버깅</span>
@@ -269,7 +274,7 @@ export function InterviewPage({ adminTools = false, debug = false }: { adminTool
   if (phase === 'completed') {
     return (
       <main className={mainClass}>
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className={chatColumnClass} data-chat-column="">
         <Chat
           actions={<Button
             className="min-h-11 sm:min-h-9"
@@ -300,7 +305,7 @@ export function InterviewPage({ adminTools = false, debug = false }: { adminTool
   const retrying = phase === 'send_error'
   return (
     <main className={mainClass}>
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className={chatColumnClass} data-chat-column="">
       {retrying && <p className="mb-3 inline-flex items-center gap-2 text-sm" role="alert"><AlertCircle aria-hidden="true" className="size-4" />답변을 보내지 못했습니다</p>}
       <Chat
         title={<h1 className="shrink-0 text-sm font-semibold">인터뷰 진행 중</h1>}
