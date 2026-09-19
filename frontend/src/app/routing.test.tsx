@@ -369,7 +369,7 @@ describe('complete application route tree', () => {
     expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
   })
 
-  it('gives only an administrator a way back to review and a restart', async () => {
+  it('gives only an administrator a way back to review and a debugging switch in the header', async () => {
     const api = new MockAppApi()
     await api.login({ username: 'admin', password: 'research123!', remember: false })
     const user = userEvent.setup()
@@ -377,11 +377,20 @@ describe('complete application route tree', () => {
     renderCompleteRoutes(api, '/interview')
     const navigation = await screen.findByRole('navigation', { name: '참여자 탐색' })
     expect(within(navigation).getByRole('link', { name: '검토' })).toHaveAttribute('href', '/admin')
+    const toggle = screen.getByRole('button', { name: '디버깅' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
 
     await user.click(screen.getByRole('button', { name: '인터뷰 시작' }))
+    await screen.findByRole('heading', { name: '인터뷰 진행 중' })
+    expect(screen.queryByRole('button', { name: '처음부터 다시' })).not.toBeInTheDocument()
 
-    expect(await screen.findByRole('heading', { name: '인터뷰 진행 중' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '처음부터 다시' })).toBeInTheDocument()
+    await user.click(toggle)
+
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
+    const panel = await screen.findByRole('region', { name: '디버깅' })
+    expect(within(panel).getByRole('list', { name: '판정 흐름' })).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: '처음부터 다시' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '디버깅' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('shows a participant the interview screen without administrator controls', async () => {
@@ -393,6 +402,7 @@ describe('complete application route tree', () => {
     expect(await screen.findByRole('heading', { name: '인터뷰 진행 중' })).toBeInTheDocument()
     const navigation = screen.getByRole('navigation', { name: '참여자 탐색' })
     expect(within(navigation).queryByRole('link', { name: '검토' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '디버깅' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '처음부터 다시' })).not.toBeInTheDocument()
   })
 

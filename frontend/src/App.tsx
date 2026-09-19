@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
 
 import { ApiProvider } from '@/app/api-context'
 import { createDefaultApi } from '@/app/default-api'
@@ -18,7 +18,8 @@ const defaultApi = createDefaultApi()
 
 function InterviewRoute() {
   const { user } = useSession()
-  return <InterviewPage adminTools={user?.role === 'admin'} />
+  const [searchParams] = useSearchParams()
+  return <InterviewPage adminTools={user?.role === 'admin'} debug={searchParams.get('debug') === '1'} />
 }
 
 function DefaultRoute() {

@@ -72,12 +72,12 @@ export function AdminDashboardPage() {
   ] as const
 
   if (phase === 'loading') {
-    return <main className="mx-auto w-full max-w-[96rem] px-4 py-6"><p role="status">인터뷰를 불러오는 중</p></main>
+    return <main className="mx-auto w-full max-w-6xl px-4 py-6"><p role="status">인터뷰를 불러오는 중</p></main>
   }
 
   if (phase === 'error') {
     return (
-      <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
+      <main className="mx-auto w-full max-w-6xl px-4 py-6">
         <p className="inline-flex items-center gap-2" role="alert">
           <AlertCircle aria-hidden="true" className="size-4" />
           인터뷰를 불러오지 못했습니다
@@ -123,7 +123,7 @@ export function AdminDashboardPage() {
   const exportLabel = selected.length ? `선택 ${selected.length}건 CSV 다운로드` : '전체 CSV 다운로드'
 
   return (
-    <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
+    <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">검토</h1>
         <div className="flex flex-wrap items-center gap-2">
@@ -139,16 +139,16 @@ export function AdminDashboardPage() {
           </Button>
         </div>
       </div>
-      <div className="mt-5 flex flex-wrap items-center gap-4 border-y border-border py-4">
-        <dl className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 border-y border-border py-3">
+        <dl className="flex flex-wrap gap-x-6 gap-y-2">
           {metrics.map(([label, value]) => (
-            <div key={label}>
+            <div className="flex items-baseline gap-1.5" key={label}>
               <dt className="text-sm text-muted-foreground">{label}</dt>
-              <dd className="font-semibold">{value}</dd>
+              <dd className="font-semibold tabular-nums">{value}</dd>
             </div>
           ))}
         </dl>
-        {archivedCount > 0 && <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+        {archivedCount > 0 && <label className="ml-auto inline-flex items-center gap-2 text-sm text-muted-foreground">
           <Checkbox
             aria-label="보관 포함"
             checked={showArchived}

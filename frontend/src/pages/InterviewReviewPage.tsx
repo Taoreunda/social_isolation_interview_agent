@@ -204,12 +204,12 @@ export function InterviewReviewPage() {
   }
 
   if (phase === 'loading') {
-    return <main aria-busy="true" className="mx-auto w-full max-w-[96rem] px-4 py-6">
+    return <main aria-busy="true" className="mx-auto w-full max-w-6xl px-4 py-6">
       <p role="status">인터뷰를 불러오는 중</p>
     </main>
   }
   if (phase === 'missing') {
-    return <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
+    return <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <p className="inline-flex items-center gap-2" role="alert">
         <AlertCircle aria-hidden="true" className="size-4" />인터뷰를 찾을 수 없습니다
       </p>
@@ -222,7 +222,7 @@ export function InterviewReviewPage() {
     </main>
   }
   if (phase === 'error') {
-    return <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
+    return <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <p className="inline-flex items-center gap-2" role="alert">
         <AlertCircle aria-hidden="true" className="size-4" />인터뷰를 불러오지 못했습니다
       </p>
@@ -233,7 +233,7 @@ export function InterviewReviewPage() {
   }
   if (!detail) return null
 
-  return <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
+  return <main className="mx-auto w-full max-w-6xl px-4 py-6">
     <div className="flex flex-wrap items-center gap-3">
       <div>
         <h1 className="text-xl font-semibold">인터뷰 검토</h1>
@@ -270,7 +270,7 @@ export function InterviewReviewPage() {
     </p>}
     <section aria-labelledby="outcome-heading" className="mt-6 border-y border-border py-4">
       <h2 className="sr-only" id="outcome-heading">판정 결과</h2>
-      <dl className="grid gap-3 sm:grid-cols-3">
+      <dl className="flex flex-wrap gap-x-10 gap-y-3">
         <div>
           <dt className="text-sm text-muted-foreground">진단</dt>
           <dd className="font-semibold">{detail.finalDiagnosis ?? '미산출'}</dd>
@@ -290,7 +290,7 @@ export function InterviewReviewPage() {
           <dd>{progressLabel(detail.status, detail.completedAt)}</dd>
         </div>
       </dl>
-      {detail.report && <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6">{detail.report}</p>}
+      {detail.report && <p className="mt-4 max-w-prose whitespace-pre-wrap break-words text-sm leading-6">{detail.report}</p>}
     </section>
     <div className="mt-6 grid gap-8" data-testid="review-split">
       <section aria-labelledby="scorecard-heading">

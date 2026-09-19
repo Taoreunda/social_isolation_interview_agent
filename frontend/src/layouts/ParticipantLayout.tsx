@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { AlertCircle, ClipboardList, KeyRound, LogOut } from 'lucide-react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { AlertCircle, Bug, ClipboardList, KeyRound, LogOut } from 'lucide-react'
+import { NavLink, Outlet, useSearchParams } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { NavigationAnnouncement } from '@/app/navigation-announcement'
@@ -9,6 +9,16 @@ import { useSession } from '@/app/session-context'
 export function ParticipantLayout() {
   const { user, isLoggingOut, logout } = useSession()
   const [logoutError, setLogoutError] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const debugging = searchParams.get('debug') === '1'
+
+  // The switch only changes the address; the interview screen reads it from there.
+  function toggleDebugging(): void {
+    const next = new URLSearchParams(searchParams)
+    if (debugging) next.delete('debug')
+    else next.set('debug', '1')
+    setSearchParams(next, { replace: true })
+  }
 
   async function handleLogout(): Promise<void> {
     setLogoutError(false)
@@ -49,6 +59,19 @@ export function ParticipantLayout() {
           )}
         </nav>
         <div className="ml-auto flex min-w-0 max-w-full items-center gap-2 text-sm">
+          {user?.role === 'admin' && (
+            <Button
+              aria-pressed={debugging}
+              className="shrink-0"
+              onClick={toggleDebugging}
+              size="sm"
+              type="button"
+              variant={debugging ? 'secondary' : 'ghost'}
+            >
+              <Bug aria-hidden="true" />
+              디버깅
+            </Button>
+          )}
           <span className="min-w-0 truncate" title={user?.username}>{user?.username}</span>
           <Button
             aria-busy={isLoggingOut}

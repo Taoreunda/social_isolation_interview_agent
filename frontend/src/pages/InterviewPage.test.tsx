@@ -28,6 +28,14 @@ function cloneInterview(detail: ParticipantInterview = interview): ParticipantIn
   return structuredClone(detail)
 }
 
+function detailOf(current: ParticipantInterview = interview): InterviewDetail {
+  return {
+    ...structuredClone(current), participantCode: '관리자 (testadmin)', reviewStatus: 'unreviewed',
+    scorecard: [{ questionId: 'A1', question: '집에 있었습니까?', answer: null, value: null, rationale: null, aiStatus: null, expertStatus: null, expertRationale: null }],
+    finalDiagnosis: null, criteria: { A: null, B: null, C: null, D: null }, report: null, algorithmVersion: 'react-scorecard-v1', completedAt: null,
+  }
+}
+
 function createApi(overrides: Partial<AppApi> = {}): AppApi {
   return {
     login: vi.fn(),
@@ -44,7 +52,7 @@ function createApi(overrides: Partial<AppApi> = {}): AppApi {
     enableParticipant: vi.fn(),
     unlockParticipant: vi.fn(),
     listInterviews: vi.fn(),
-    getInterview: vi.fn(),
+    getInterview: vi.fn().mockImplementation(async () => detailOf()),
     reviewScorecard: vi.fn(),
     archiveInterview: vi.fn(),
     exportInterviewCsv: vi.fn(),
@@ -435,7 +443,7 @@ describe('starting an interview', () => {
 
 describe('starting an interview over', () => {
   function renderRestartable(api: AppApi) {
-    return render(<ApiProvider api={api}><InterviewPage adminTools /></ApiProvider>)
+    return render(<ApiProvider api={api}><InterviewPage adminTools debug /></ApiProvider>)
   }
 
   it('lets an administrator start over from a running interview', async () => {
@@ -504,14 +512,16 @@ describe('chat layout', () => {
     expect(list).toHaveClass('mt-auto')
   })
 
-  it('puts the title, progress and controls on one strip', async () => {
-    render(<ApiProvider api={createApi()}><InterviewPage adminTools /></ApiProvider>)
+  it('puts the title and progress on one strip and keeps administrator tools out of it', async () => {
+    render(<ApiProvider api={createApi()}><InterviewPage adminTools debug /></ApiProvider>)
     await screen.findByLabelText('답변 입력')
 
     const strip = screen.getByRole('heading', { name: '인터뷰 진행 중' }).parentElement!
     expect(within(strip).getByRole('progressbar', { name: '진행률' })).toBeInTheDocument()
     expect(within(strip).getByText('40%')).toBeInTheDocument()
-    expect(within(strip).getByRole('button', { name: '처음부터 다시' })).toBeInTheDocument()
+    expect(within(strip).queryByRole('button', { name: '처음부터 다시' })).not.toBeInTheDocument()
+    const panel = await screen.findByRole('region', { name: '디버깅' })
+    expect(within(panel).getByRole('button', { name: '처음부터 다시' })).toBeInTheDocument()
   })
 
   it('keeps the composer two lines tall instead of growing with the text', async () => {
@@ -565,61 +575,43 @@ describe('chat layout', () => {
 })
 
 describe('debug mode', () => {
-  function detailFor(interview: ParticipantInterview): InterviewDetail {
-    return {
-      ...interview, participantCode: '관리자 (testadmin)', reviewStatus: 'unreviewed',
-      scorecard: [{ questionId: 'A1', question: '집에 있었습니까?', answer: null, value: null, rationale: null, aiStatus: null, expertStatus: null, expertRationale: null }],
-      finalDiagnosis: null, criteria: { A: null, B: null, C: null, D: null }, report: null, algorithmVersion: 'react-scorecard-v1', completedAt: null,
-    }
-  }
-
-  it('shows the judgment flow to an administrator who turns debugging on, and refreshes it after a turn', async () => {
-    const getInterview = vi.fn().mockImplementation(async () => detailFor(cloneInterview()))
-    const api = createApi({ getInterview })
+  it('shows the judgment flow while debugging is on and refreshes it after a turn', async () => {
+    const api = createApi()
     const user = userEvent.setup()
-    render(<ApiProvider api={api}><InterviewPage adminTools /></ApiProvider>)
-    await screen.findByLabelText('답변 입력')
-    expect(screen.queryByRole('region', { name: '판정 흐름' })).not.toBeInTheDocument()
+    render(<ApiProvider api={api}><InterviewPage adminTools debug /></ApiProvider>)
 
-    await user.click(screen.getByRole('button', { name: '디버깅' }))
-
-    expect(await screen.findByRole('region', { name: '판정 흐름' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '디버깅' })).toHaveAttribute('aria-pressed', 'true')
-    expect(getInterview).toHaveBeenCalledWith('interview-001')
+    const panel = await screen.findByRole('region', { name: '디버깅' })
+    expect(within(panel).getByRole('list', { name: '판정 흐름' })).toBeInTheDocument()
+    expect(api.getInterview).toHaveBeenCalledWith('interview-001')
 
     await user.type(screen.getByLabelText('답변 입력'), '네')
     await user.click(screen.getByRole('button', { name: '답변 전송' }))
 
-    await waitFor(() => expect(getInterview).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(api.getInterview).toHaveBeenCalledTimes(2))
   })
 
-  it('hides the flow again when debugging is turned off', async () => {
-    const api = createApi({ getInterview: vi.fn().mockImplementation(async () => detailFor(cloneInterview())) })
-    const user = userEvent.setup()
-    render(<ApiProvider api={api}><InterviewPage adminTools /></ApiProvider>)
-    await user.click(await screen.findByRole('button', { name: '디버깅' }))
-    await screen.findByRole('region', { name: '판정 흐름' })
-
-    await user.click(screen.getByRole('button', { name: '디버깅' }))
-
-    expect(screen.queryByRole('region', { name: '판정 흐름' })).not.toBeInTheDocument()
-  })
-
-  it('never offers debugging to a participant', async () => {
+  it('shows nothing of the sort while debugging is off, even to an administrator', async () => {
     const api = createApi()
-    renderInterview(api)
+    render(<ApiProvider api={api}><InterviewPage adminTools /></ApiProvider>)
     await screen.findByLabelText('답변 입력')
 
-    expect(screen.queryByRole('button', { name: '디버깅' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: '판정 흐름' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '디버깅' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '처음부터 다시' })).not.toBeInTheDocument()
+    expect(api.getInterview).not.toHaveBeenCalled()
+  })
+
+  it('never shows the panel to a participant, whatever the flag says', async () => {
+    const api = createApi()
+    render(<ApiProvider api={api}><InterviewPage debug /></ApiProvider>)
+    await screen.findByLabelText('답변 입력')
+
+    expect(screen.queryByRole('region', { name: '디버깅' })).not.toBeInTheDocument()
     expect(api.getInterview).not.toHaveBeenCalled()
   })
 
   it('says so when the flow cannot be loaded', async () => {
     const api = createApi({ getInterview: vi.fn().mockRejectedValue(new ApiError(503, '불가')) })
-    const user = userEvent.setup()
-    render(<ApiProvider api={api}><InterviewPage adminTools /></ApiProvider>)
-    await user.click(await screen.findByRole('button', { name: '디버깅' }))
+    render(<ApiProvider api={api}><InterviewPage adminTools debug /></ApiProvider>)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('판정 흐름을 불러오지 못했습니다')
   })

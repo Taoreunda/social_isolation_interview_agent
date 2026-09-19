@@ -112,7 +112,7 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
           <TableHead className="w-[24%]">답변</TableHead>
           <TableHead className="w-[20%]">AI 판정</TableHead>
           <TableHead className="w-[13%]">전문가 판정</TableHead>
-          <TableHead className="w-[13%]">작업</TableHead>
+          <TableHead className="w-[13%] min-w-[11rem]">작업</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody className="block sm:table-row-group">
@@ -124,7 +124,7 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
           </TableCell>
           <TableCell className="block break-words whitespace-normal sm:table-cell">
             <MobileLabel>답변:</MobileLabel>
-            {row.answer ?? <span className="text-muted-foreground">기록 없음</span>}
+            {row.answer ?? (row.value ? null : <span className="text-muted-foreground">기록 없음</span>)}
             {row.value && row.value !== row.answer && (
               <span className="mt-1 inline-block rounded-md border border-border px-2 py-0.5 text-sm text-muted-foreground">
                 {row.value}

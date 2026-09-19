@@ -1,4 +1,4 @@
-import { AlertCircle, Bug, Play, RefreshCw, RotateCcw } from 'lucide-react'
+import { AlertCircle, Play, RefreshCw, RotateCcw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useApi } from '@/app/api-context'
@@ -29,7 +29,7 @@ function phaseFor(interview: ParticipantInterview): InterviewPhase {
   return interview.status === 'completed' ? 'completed' : 'active'
 }
 
-export function InterviewPage({ adminTools = false }: { adminTools?: boolean }) {
+export function InterviewPage({ adminTools = false, debug = false }: { adminTools?: boolean; debug?: boolean }) {
   const api = useApi()
   const [answer, setAnswer] = useState('')
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
@@ -39,7 +39,6 @@ export function InterviewPage({ adminTools = false }: { adminTools?: boolean }) 
   const [confirmingRestart, setConfirmingRestart] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [restartError, setRestartError] = useState<string | null>(null)
-  const [debug, setDebug] = useState(false)
   const [trace, setTrace] = useState<InterviewDetail | null>(null)
   const [traceError, setTraceError] = useState<string | null>(null)
   const traceRequest = useRef(0)
@@ -78,6 +77,13 @@ export function InterviewPage({ adminTools = false }: { adminTools?: boolean }) 
     }
   }, [loadInterview])
 
+  const showTrace = adminTools && debug
+  const interviewId = interview?.id ?? null
+  useEffect(() => {
+    if (showTrace && interviewId) void refreshTrace(interviewId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshTrace is stable for a given api
+  }, [showTrace, interviewId])
+
   async function startInterview(): Promise<void> {
     if (inFlight.current) return
     const operation = ++requestGeneration.current
@@ -111,12 +117,6 @@ export function InterviewPage({ adminTools = false }: { adminTools?: boolean }) 
       if (!mounted.current || operation !== traceRequest.current) return
       setTraceError('판정 흐름을 불러오지 못했습니다')
     }
-  }
-
-  function toggleDebug(): void {
-    const next = !debug
-    setDebug(next)
-    if (next && interview) void refreshTrace(interview.id)
   }
 
   function adopt(detail: ParticipantInterview): void {
@@ -231,29 +231,39 @@ export function InterviewPage({ adminTools = false }: { adminTools?: boolean }) 
 
   if (!interview) return null
 
-  const debugToggle = adminTools ? <Button
-    aria-pressed={debug}
-    className={`min-h-11 shrink-0 sm:min-h-9 ${debug ? '' : 'text-muted-foreground'}`}
-    onClick={toggleDebug}
-    size="sm"
-    type="button"
-    variant={debug ? 'secondary' : 'ghost'}
-  >
-    <Bug aria-hidden="true" />디버깅
-  </Button> : null
-  const showTrace = adminTools && debug
   const mainClass = showTrace
     ? 'mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-4 pt-4 pb-4 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-6'
     : 'mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4'
   const tracePanel = showTrace ? (
-    <aside className="mt-4 min-h-0 border-t border-border pt-4 lg:mt-0 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
-      {traceError && <p className="inline-flex items-center gap-2 text-sm" role="alert">
-        <AlertCircle aria-hidden="true" className="size-4" />{traceError}
-      </p>}
-      {!traceError && (trace
-        ? <JudgmentFlow detail={trace} />
-        : <p className="text-sm text-muted-foreground">판정 흐름을 불러오는 중</p>)}
-    </aside>
+    <section
+      aria-label="디버깅"
+      className="mt-4 flex max-h-72 min-h-0 flex-col border-t border-border pt-4 lg:mt-0 lg:max-h-none lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold">디버깅</span>
+        {phase !== 'completed' && <Button
+          className="ml-auto min-h-11 shrink-0 text-muted-foreground sm:min-h-9"
+          disabled={phase === 'sending'}
+          onClick={() => {
+            setRestartError(null)
+            setConfirmingRestart(true)
+          }}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <RotateCcw aria-hidden="true" />처음부터 다시
+        </Button>}
+      </div>
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+        {traceError && <p className="inline-flex items-center gap-2 text-sm" role="alert">
+          <AlertCircle aria-hidden="true" className="size-4" />{traceError}
+        </p>}
+        {!traceError && (trace
+          ? <JudgmentFlow detail={trace} />
+          : <p className="text-sm text-muted-foreground">판정 흐름을 불러오는 중</p>)}
+      </div>
+    </section>
   ) : null
 
   if (phase === 'completed') {
@@ -261,18 +271,15 @@ export function InterviewPage({ adminTools = false }: { adminTools?: boolean }) 
       <main className={mainClass}>
         <div className="flex min-h-0 flex-1 flex-col">
         <Chat
-          actions={<>
-            {debugToggle}
-            <Button
-              className="min-h-11 sm:min-h-9"
-              onClick={() => void startInterview()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <Play aria-hidden="true" />새 인터뷰 시작
-            </Button>
-          </>}
+          actions={<Button
+            className="min-h-11 sm:min-h-9"
+            onClick={() => void startInterview()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Play aria-hidden="true" />새 인터뷰 시작
+          </Button>}
           answer=""
           isSending={false}
           messages={interview.messages}
@@ -296,22 +303,6 @@ export function InterviewPage({ adminTools = false }: { adminTools?: boolean }) 
       <div className="flex min-h-0 flex-1 flex-col">
       {retrying && <p className="mb-3 inline-flex items-center gap-2 text-sm" role="alert"><AlertCircle aria-hidden="true" className="size-4" />답변을 보내지 못했습니다</p>}
       <Chat
-        actions={adminTools ? <>
-          {debugToggle}
-          <Button
-            className="min-h-11 shrink-0 text-muted-foreground sm:min-h-9"
-            disabled={phase === 'sending'}
-            onClick={() => {
-              setRestartError(null)
-              setConfirmingRestart(true)
-            }}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            <RotateCcw aria-hidden="true" />처음부터 다시
-          </Button>
-        </> : undefined}
         title={<h1 className="shrink-0 text-sm font-semibold">인터뷰 진행 중</h1>}
         answer={answer}
         isSending={phase === 'sending'}

@@ -74,7 +74,7 @@ export function LoginPage() {
     <main className="mx-auto flex min-h-screen w-full max-w-sm items-center px-4">
       <form className="w-full space-y-5" onSubmit={(event) => void handleSubmit(event)}>
         <p className="font-semibold text-foreground">고립 챗봇</p>
-        <h1 className="text-2xl font-semibold">로그인</h1>
+        <h1 className="text-xl font-semibold">로그인</h1>
         {announcement && <p role="status">{announcement}</p>}
         <div className="space-y-2">
           <Label htmlFor="username">사용자 이름</Label>

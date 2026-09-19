@@ -47,13 +47,13 @@ export function InterviewTranscriptPage() {
   )
 
   if (phase === 'loading') {
-    return <main aria-busy="true" className="mx-auto w-full max-w-[96rem] px-4 py-6">
+    return <main aria-busy="true" className="mx-auto w-full max-w-6xl px-4 py-6">
       <p role="status">대화를 불러오는 중</p>
     </main>
   }
 
   if (phase === 'missing') {
-    return <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
+    return <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <p className="inline-flex items-center gap-2" role="alert">
         <AlertCircle aria-hidden="true" className="size-4" />인터뷰를 찾을 수 없습니다
       </p>
@@ -62,7 +62,7 @@ export function InterviewTranscriptPage() {
   }
 
   if (phase === 'error' || !detail) {
-    return <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
+    return <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <p className="inline-flex items-center gap-2" role="alert">
         <AlertCircle aria-hidden="true" className="size-4" />대화를 불러오지 못했습니다
       </p>

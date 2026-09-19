@@ -246,10 +246,10 @@ export function ParticipantsPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[96rem] px-4 py-6">
+    <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold">참여자</h1>
-        <div className="relative min-w-0 flex-1 basis-48">
+        <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
           <Search aria-hidden="true" className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
           <Input
             aria-label="참여자 검색"
@@ -262,7 +262,7 @@ export function ParticipantsPage() {
         </div>
         <Button
           aria-busy={exporting}
-          className="h-auto min-h-9 whitespace-normal text-center"
+          className="ml-auto min-h-11 sm:min-h-9"
           disabled={exporting || visibleParticipants.length === 0}
           onClick={() => void exportCsv()}
           type="button"
@@ -271,7 +271,7 @@ export function ParticipantsPage() {
           <Download aria-hidden="true" />
           {selected.length ? `선택 ${selected.length}명 CSV 다운로드` : '전체 CSV 다운로드'}
         </Button>
-        <Button className="h-auto min-h-9 whitespace-normal text-center" onClick={() => setDialog({ mode: 'create' })} type="button">
+        <Button className="min-h-11 sm:min-h-9" onClick={() => setDialog({ mode: 'create' })} type="button">
           <UserPlus aria-hidden="true" />
           계정 생성
         </Button>
