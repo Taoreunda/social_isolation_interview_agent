@@ -1,12 +1,13 @@
-import { AlertCircle, Play, RefreshCw, RotateCcw } from 'lucide-react'
+import { AlertCircle, Bug, Play, RefreshCw, RotateCcw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useApi } from '@/app/api-context'
 import { hasApiStatus } from '@/app/api-error'
-import type { ParticipantInterview } from '@/app/contracts'
+import type { InterviewDetail, ParticipantInterview } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Chat } from '@/features/interview/Chat'
+import { JudgmentFlow } from '@/features/interview/JudgmentFlow'
 
 type InterviewPhase =
   | 'loading'
@@ -28,7 +29,7 @@ function phaseFor(interview: ParticipantInterview): InterviewPhase {
   return interview.status === 'completed' ? 'completed' : 'active'
 }
 
-export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean }) {
+export function InterviewPage({ adminTools = false }: { adminTools?: boolean }) {
   const api = useApi()
   const [answer, setAnswer] = useState('')
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
@@ -38,6 +39,10 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
   const [confirmingRestart, setConfirmingRestart] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [restartError, setRestartError] = useState<string | null>(null)
+  const [debug, setDebug] = useState(false)
+  const [trace, setTrace] = useState<InterviewDetail | null>(null)
+  const [traceError, setTraceError] = useState<string | null>(null)
+  const traceRequest = useRef(0)
   const mounted = useRef(false)
   const requestGeneration = useRef(0)
   const inFlight = useRef(false)
@@ -84,14 +89,40 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
       setAnswer('')
       setPendingMessage(null)
       pendingTurn.current = null
-      setInterview(detail)
-      setPhase(phaseFor(detail))
+      adopt(detail)
     } catch {
       if (!mounted.current || operation !== requestGeneration.current) return
       setPhase('start_error')
     } finally {
       inFlight.current = false
     }
+  }
+
+  // The judgment flow comes from the administrator detail of this very
+  // interview; a participant never asks for it and would be refused anyway.
+  async function refreshTrace(interviewId: string): Promise<void> {
+    const operation = ++traceRequest.current
+    setTraceError(null)
+    try {
+      const detail = await api.getInterview(interviewId)
+      if (!mounted.current || operation !== traceRequest.current) return
+      setTrace(detail)
+    } catch {
+      if (!mounted.current || operation !== traceRequest.current) return
+      setTraceError('판정 흐름을 불러오지 못했습니다')
+    }
+  }
+
+  function toggleDebug(): void {
+    const next = !debug
+    setDebug(next)
+    if (next && interview) void refreshTrace(interview.id)
+  }
+
+  function adopt(detail: ParticipantInterview): void {
+    setInterview(detail)
+    setPhase(phaseFor(detail))
+    if (adminTools && debug) void refreshTrace(detail.id)
   }
 
   async function restartInterview(): Promise<void> {
@@ -109,8 +140,7 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
       setAnswer('')
       setPendingMessage(null)
       pendingTurn.current = null
-      setInterview(detail)
-      setPhase(phaseFor(detail))
+      adopt(detail)
       setConfirmingRestart(false)
     } catch {
       if (!mounted.current || operation !== requestGeneration.current) return
@@ -149,8 +179,7 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
       if (!mounted.current || operation !== requestGeneration.current) return
       pendingTurn.current = null
       setPendingMessage(null)
-      setInterview(detail)
-      setPhase(phaseFor(detail))
+      adopt(detail)
     } catch {
       if (!mounted.current || operation !== requestGeneration.current) return
       setPhase('send_error')
@@ -202,19 +231,48 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
 
   if (!interview) return null
 
+  const debugToggle = adminTools ? <Button
+    aria-pressed={debug}
+    className={`min-h-11 shrink-0 sm:min-h-9 ${debug ? '' : 'text-muted-foreground'}`}
+    onClick={toggleDebug}
+    size="sm"
+    type="button"
+    variant={debug ? 'secondary' : 'ghost'}
+  >
+    <Bug aria-hidden="true" />디버깅
+  </Button> : null
+  const showTrace = adminTools && debug
+  const mainClass = showTrace
+    ? 'mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-4 pt-4 pb-4 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:grid-rows-[minmax(0,1fr)] lg:gap-6'
+    : 'mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4'
+  const tracePanel = showTrace ? (
+    <aside className="mt-4 min-h-0 border-t border-border pt-4 lg:mt-0 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
+      {traceError && <p className="inline-flex items-center gap-2 text-sm" role="alert">
+        <AlertCircle aria-hidden="true" className="size-4" />{traceError}
+      </p>}
+      {!traceError && (trace
+        ? <JudgmentFlow detail={trace} />
+        : <p className="text-sm text-muted-foreground">판정 흐름을 불러오는 중</p>)}
+    </aside>
+  ) : null
+
   if (phase === 'completed') {
     return (
-      <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4">
+      <main className={mainClass}>
+        <div className="flex min-h-0 flex-1 flex-col">
         <Chat
-          actions={<Button
-            className="min-h-11 sm:min-h-9"
-            onClick={() => void startInterview()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <Play aria-hidden="true" />새 인터뷰 시작
-          </Button>}
+          actions={<>
+            {debugToggle}
+            <Button
+              className="min-h-11 sm:min-h-9"
+              onClick={() => void startInterview()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <Play aria-hidden="true" />새 인터뷰 시작
+            </Button>
+          </>}
           answer=""
           isSending={false}
           messages={interview.messages}
@@ -226,28 +284,34 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
           showComposer={false}
           title={<h1 className="shrink-0 text-sm font-semibold">완료했습니다</h1>}
         />
+        </div>
+        {tracePanel}
       </main>
     )
   }
 
   const retrying = phase === 'send_error'
   return (
-    <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 pt-4 pb-4">
+    <main className={mainClass}>
+      <div className="flex min-h-0 flex-1 flex-col">
       {retrying && <p className="mb-3 inline-flex items-center gap-2 text-sm" role="alert"><AlertCircle aria-hidden="true" className="size-4" />답변을 보내지 못했습니다</p>}
       <Chat
-        actions={allowRestart ? <Button
-          className="min-h-11 shrink-0 text-muted-foreground sm:min-h-9"
-          disabled={phase === 'sending'}
-          onClick={() => {
-            setRestartError(null)
-            setConfirmingRestart(true)
-          }}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          <RotateCcw aria-hidden="true" />처음부터 다시
-        </Button> : undefined}
+        actions={adminTools ? <>
+          {debugToggle}
+          <Button
+            className="min-h-11 shrink-0 text-muted-foreground sm:min-h-9"
+            disabled={phase === 'sending'}
+            onClick={() => {
+              setRestartError(null)
+              setConfirmingRestart(true)
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <RotateCcw aria-hidden="true" />처음부터 다시
+          </Button>
+        </> : undefined}
         title={<h1 className="shrink-0 text-sm font-semibold">인터뷰 진행 중</h1>}
         answer={answer}
         isSending={phase === 'sending'}
@@ -277,6 +341,8 @@ export function InterviewPage({ allowRestart = false }: { allowRestart?: boolean
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
+      {tracePanel}
     </main>
   )
 }

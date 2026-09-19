@@ -18,7 +18,7 @@ const defaultApi = createDefaultApi()
 
 function InterviewRoute() {
   const { user } = useSession()
-  return <InterviewPage allowRestart={user?.role === 'admin'} />
+  return <InterviewPage adminTools={user?.role === 'admin'} />
 }
 
 function DefaultRoute() {
