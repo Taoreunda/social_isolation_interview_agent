@@ -56,8 +56,8 @@ describe('JudgmentFlow lamps', () => {
   it('says what each lamp means to a screen reader, since colour alone does not', () => {
     render(<JudgmentFlow detail={detailWith(rowsWith({ A1: ['positive', '예'], A2: ['negative', '주 5회'] }))} />)
 
-    expect(screen.getByRole('button', { name: 'A1 참' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'A2 거짓' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'A1 True' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'A2 False' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'A3 지금 묻는 문항' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'B1 아직' })).toBeInTheDocument()
   })
@@ -135,14 +135,14 @@ describe('JudgmentFlow detail', () => {
 
     const detail = screen.getByTestId('lamp-detail')
     expect(detail).toHaveTextContent('A2')
-    expect(detail).toHaveTextContent('주 4회 미만 → 참')
+    expect(detail).toHaveTextContent('주 4회 미만 → True')
 
-    await user.click(screen.getByRole('button', { name: 'A1 참' }))
+    await user.click(screen.getByRole('button', { name: 'A1 True' }))
 
     expect(detail).toHaveTextContent('A1')
-    expect(detail).toHaveTextContent('예 → 참')
+    expect(detail).toHaveTextContent('예 → True')
     expect(detail).toHaveTextContent('예')
     expect(detail).toHaveTextContent('A1 근거')
-    expect(screen.getByRole('button', { name: 'A1 참' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'A1 True' })).toHaveAttribute('aria-pressed', 'true')
   })
 })

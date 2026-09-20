@@ -5,8 +5,8 @@ import type { InterviewDetail } from '@/app/contracts'
 type LampState = 'true' | 'false' | 'empty' | 'current' | 'skipped' | 'recorded'
 
 const STATE_NAME: Record<LampState, string> = {
-  true: '참',
-  false: '거짓',
+  true: 'True',
+  false: 'False',
   empty: '아직',
   current: '지금 묻는 문항',
   skipped: '건너뜀',
@@ -24,23 +24,23 @@ const ROWS: { key: string; rule: string | null }[] = [
 ]
 
 const DIAGNOSES: { name: string; needs: Record<string, boolean> | null; rule: string }[] = [
-  { name: '히키코모리', needs: { A: true, B: true, C: true, D: true }, rule: 'A·B·C·D 모두 참' },
-  { name: '사회적 고립', needs: { A: false, B: true, C: true, D: true }, rule: 'B·C·D 참, A 거짓' },
-  { name: '일반', needs: null, rule: '그 외 (A·B·C 모두 거짓이면 D·E를 묻지 않고 종료)' },
+  { name: '히키코모리', needs: { A: true, B: true, C: true, D: true }, rule: 'A·B·C·D 모두 True' },
+  { name: '사회적 고립', needs: { A: false, B: true, C: true, D: true }, rule: 'B·C·D True, A False' },
+  { name: '일반', needs: null, rule: '그 외 (A·B·C 모두 False이면 D·E를 묻지 않고 종료)' },
 ]
 
 const CUT_OFF: Record<string, string> = {
-  A1: '예 → 참 · 아니요 → 거짓',
-  A2: '주 4회 미만 → 참 · 4회 이상 → 거짓',
-  A3: '6개월 이상 → 참 · 미만 → 거짓',
-  B1: '0명 → 참 · 1명 이상 → 거짓',
-  B2: '3개월 이상 → 참 · 미만 → 거짓',
-  C1: '0명 → 참 · 1명 이상 → 거짓',
-  C2: '3개월 이상 → 참 · 미만 → 거짓',
-  D1: '고통 있음 또는 5점 이상 → 참 · 없음 또는 4점 이하 → 거짓',
-  D1_duration: 'D1이 참일 때만 묻는다 · 3개월 이상 → 참',
-  D2: '영향 있음 또는 5점 이상 → 참 · 없음 또는 4점 이하 → 거짓',
-  D2_duration: 'D2가 참일 때만 묻는다 · 3개월 이상 → 참',
+  A1: '예 → True · 아니요 → False',
+  A2: '주 4회 미만 → True · 4회 이상 → False',
+  A3: '6개월 이상 → True · 미만 → False',
+  B1: '0명 → True · 1명 이상 → False',
+  B2: '3개월 이상 → True · 미만 → False',
+  C1: '0명 → True · 1명 이상 → False',
+  C2: '3개월 이상 → True · 미만 → False',
+  D1: '고통 있음 또는 5점 이상 → True · 없음 또는 4점 이하 → False',
+  D1_duration: 'D1이 True일 때만 묻는다 · 3개월 이상 → True',
+  D2: '영향 있음 또는 5점 이상 → True · 없음 또는 4점 이하 → False',
+  D2_duration: 'D2가 True일 때만 묻는다 · 3개월 이상 → True',
   E1: '판정 없음 · 말한 그대로 기록',
   E2: '판정 없음 · 말한 그대로 기록',
 }
