@@ -123,7 +123,7 @@ export function Chat({
       {offerSuggestions && <div aria-label="추천 답변" className="flex flex-wrap gap-2 border-t border-border pt-3" role="group">
         {suggestions.map((reply) => (
           <button
-            className="min-h-11 rounded-full border border-primary bg-primary/10 px-4 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-9"
+            className="min-h-11 rounded-lg border border-primary bg-primary/10 px-4 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-9"
             key={reply.text}
             onClick={() => onSuggestion?.(reply)}
             type="button"

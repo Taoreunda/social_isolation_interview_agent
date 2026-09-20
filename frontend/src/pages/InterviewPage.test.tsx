@@ -715,7 +715,7 @@ describe('suggested replies', () => {
     renderInterview(api)
 
     const reply = await screen.findByRole('button', { name: '예' })
-    expect(reply).toHaveClass('rounded-full', 'border-primary', 'text-primary')
+    expect(reply).toHaveClass('border-primary', 'bg-primary/10', 'text-primary')
     expect(reply).not.toHaveClass('bg-muted')
   })
 
