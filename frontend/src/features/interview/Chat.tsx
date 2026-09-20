@@ -80,8 +80,8 @@ export function Chat({
         <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{progress}%</span>
         {actions}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto py-4" ref={conversation}>
-        <ol aria-label="인터뷰 대화" className="mt-auto space-y-3">
+      <div className="min-h-0 flex-1 overflow-y-auto py-4" ref={conversation}>
+        <ol aria-label="인터뷰 대화" className="space-y-3">
           {messages.map((message) => (
             <li
               aria-label={`${roleName(message.role)} 메시지`}

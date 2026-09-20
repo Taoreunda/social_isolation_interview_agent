@@ -503,13 +503,14 @@ describe('starting an interview over', () => {
 })
 
 describe('chat layout', () => {
-  it('keeps a short conversation next to the composer instead of floating at the top', async () => {
+  it('starts the conversation at the top and lets it grow downward', async () => {
     renderInterview(createApi())
     await screen.findByLabelText('답변 입력')
 
     const list = screen.getByRole('list', { name: '인터뷰 대화' })
-    expect(list.parentElement).toHaveClass('flex', 'flex-col', 'flex-1', 'overflow-y-auto')
-    expect(list).toHaveClass('mt-auto')
+    expect(list.parentElement).toHaveClass('flex-1', 'overflow-y-auto')
+    expect(list).not.toHaveClass('mt-auto')
+    expect(list.parentElement).not.toHaveClass('justify-end')
   })
 
   it('puts the title and progress on one strip and keeps administrator tools out of it', async () => {
