@@ -29,7 +29,24 @@ function phaseFor(interview: ParticipantInterview): InterviewPhase {
   return interview.status === 'completed' ? 'completed' : 'active'
 }
 
-export function InterviewPage({ adminTools = false, debug = false }: { adminTools?: boolean; debug?: boolean }) {
+// A bubble takes about as long to arrive as it takes to read the one before it.
+function defaultRevealDelay(text: string): number {
+  return Math.min(1600, Math.max(600, 400 + text.length * 22))
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+interface InterviewPageProps {
+  adminTools?: boolean
+  debug?: boolean
+  revealDelay?: (text: string) => number
+}
+
+export function InterviewPage({ adminTools = false, debug = false, revealDelay = defaultRevealDelay }: InterviewPageProps) {
   const api = useApi()
   const [answer, setAnswer] = useState('')
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
@@ -42,6 +59,8 @@ export function InterviewPage({ adminTools = false, debug = false }: { adminTool
   const [trace, setTrace] = useState<InterviewDetail | null>(null)
   const [traceError, setTraceError] = useState<string | null>(null)
   const traceRequest = useRef(0)
+  // While a fresh interview opens, only this many messages are on screen; null shows them all.
+  const [revealed, setRevealed] = useState<number | null>(null)
   const mounted = useRef(false)
   const requestGeneration = useRef(0)
   const inFlight = useRef(false)
@@ -95,7 +114,7 @@ export function InterviewPage({ adminTools = false, debug = false }: { adminTool
       setAnswer('')
       setPendingMessage(null)
       pendingTurn.current = null
-      adopt(detail)
+      adopt(detail, { opening: true })
     } catch {
       if (!mounted.current || operation !== requestGeneration.current) return
       setPhase('start_error')
@@ -119,11 +138,25 @@ export function InterviewPage({ adminTools = false, debug = false }: { adminTool
     }
   }
 
-  function adopt(detail: ParticipantInterview): void {
+  function adopt(detail: ParticipantInterview, options: { opening?: boolean } = {}): void {
     setInterview(detail)
     setPhase(phaseFor(detail))
+    setRevealed(options.opening && detail.messages.length > 1 && !prefersReducedMotion() ? 1 : null)
     if (adminTools && debug) void refreshTrace(detail.id)
   }
+
+  useEffect(() => {
+    if (revealed === null || !interview) return
+    if (revealed >= interview.messages.length) {
+      setRevealed(null)
+      return
+    }
+    const timer = setTimeout(
+      () => setRevealed((count) => (count === null ? null : count + 1)),
+      revealDelay(interview.messages[revealed].content),
+    )
+    return () => clearTimeout(timer)
+  }, [revealed, interview, revealDelay])
 
   async function restartInterview(): Promise<void> {
     if (!interview || inFlight.current) return
@@ -140,7 +173,7 @@ export function InterviewPage({ adminTools = false, debug = false }: { adminTool
       setAnswer('')
       setPendingMessage(null)
       pendingTurn.current = null
-      adopt(detail)
+      adopt(detail, { opening: true })
       setConfirmingRestart(false)
     } catch {
       if (!mounted.current || operation !== requestGeneration.current) return
@@ -311,7 +344,8 @@ export function InterviewPage({ adminTools = false, debug = false }: { adminTool
         title={<h1 className="shrink-0 text-sm font-semibold">인터뷰 진행 중</h1>}
         answer={answer}
         isSending={phase === 'sending'}
-        messages={interview.messages}
+        messages={revealed === null ? interview.messages : interview.messages.slice(0, revealed)}
+        typing={revealed !== null}
         onAnswerChange={setAnswer}
         onSubmit={(event) => void submitAnswer(event)}
         pendingMessage={pendingMessage}

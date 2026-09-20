@@ -68,7 +68,7 @@ UUID와 UTC timezone-aware timestamp를 사용합니다. partial unique index가
 5. 성공 시 user 메시지, assistant 메시지, 점수표와 인터뷰 상태를 한 transaction으로 커밋합니다.
 6. 커밋된 `client_turn_id` 재전송은 모델을 다시 호출하지 않고 저장 결과를 반환합니다.
 
-LLM 실패는 이전 커밋을 보존합니다. 서버 재시작 후에도 마지막 turn 경계부터 복원합니다. system prompt, tool call/message와 provider 객체는 저장하지 않습니다. 초기 인터뷰 생성은 process lock과 PostgreSQL advisory lock으로 직렬화됩니다.
+모든 인터뷰는 `interview/welcome.py`의 고정 환영 메시지로 시작하고, 그 뒤에 첫 질문이 이어집니다. 환영 메시지도 공개 메시지로 저장되어 대화 기록에 남습니다. LLM 실패는 이전 커밋을 보존합니다. 서버 재시작 후에도 마지막 turn 경계부터 복원합니다. system prompt, tool call/message와 provider 객체는 저장하지 않습니다. 초기 인터뷰 생성은 process lock과 PostgreSQL advisory lock으로 직렬화됩니다.
 
 모델이 기존 AI 판단을 바꾸면 해당 문항의 이전 전문가 검토를 무효화합니다. AI 상태가 `null`이면 검토할 수 없고 `recorded` 문항은 동의만 가능하며, 변경은 AI 판정과 다른 값이어야 합니다. 같은 값으로의 변경은 `400`으로 거부하고, 검토 UI는 `recorded` 행의 변경 버튼을 비활성화한 뒤 대화상자에서 유일하게 유효한 반대 판정을 기본 선택합니다. 검토 상태는 AI 판단이 존재하는 행만 대상으로 `unreviewed|in_review|reviewed`를 계산하며, 아직 진행 중인 인터뷰는 남은 문항이 더 들어오므로 `reviewed`가 되지 않습니다. 점수표 도구는 E1·E2를 제외한 문항의 `value`를 12자 이내 코드값(`예`, `주 2회`, `0명`, `12개월`)으로 제한합니다. 참여자의 문장은 `rationale`과 답변 메시지에 남습니다.
 

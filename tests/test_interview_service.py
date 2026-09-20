@@ -15,6 +15,7 @@ from auth.policy import AccountStatus, Role
 from interview.engine import EngineTurnResult, InterviewGenerationError
 from interview.models import ExpertReview, Interview, InterviewMessage, ScorecardItem
 from interview.scorecard import Scorecard
+from interview.welcome import WELCOME_MESSAGES
 from interview.service import (
     InterviewBusy,
     InterviewNotFound,
@@ -104,9 +105,12 @@ def test_start_persists_initial_state_and_a_new_service_can_resume(
 
     assert started.participant_id == participant.id
     assert started.status == "active"
+    # A fixed welcome opens every interview; the first question follows it.
     assert [(item.sequence, item.role, item.content) for item in started.messages] == [
-        (0, "assistant", "첫 질문입니다.")
+        *((index, "assistant", text) for index, text in enumerate(WELCOME_MESSAGES)),
+        (len(WELCOME_MESSAGES), "assistant", "첫 질문입니다."),
     ]
+    assert len(WELCOME_MESSAGES) >= 2, "the welcome arrives as several short bubbles"
     assert len(started.scorecard_items) == len(Scorecard().question_order)
     assert engine.calls[0]["messages"] == []
     assert engine.calls[0]["user_input"] == ""
@@ -119,7 +123,7 @@ def test_start_persists_initial_state_and_a_new_service_can_resume(
 
     assert resumed is not None
     assert resumed.id == started.id
-    assert [message.content for message in resumed.messages] == ["첫 질문입니다."]
+    assert [message.content for message in resumed.messages] == [*WELCOME_MESSAGES, "첫 질문입니다."]
 
 
 def test_current_interview_is_one_consistent_database_snapshot(
@@ -152,7 +156,7 @@ def test_current_interview_is_one_consistent_database_snapshot(
             concurrent.add(
                 InterviewMessage(
                     interview_id=interview_id,
-                    sequence=1,
+                    sequence=len(WELCOME_MESSAGES) + 1,
                     role="assistant",
                     content="동시에 커밋된 완료 메시지",
                     created_at=NOW,
@@ -209,17 +213,20 @@ def test_turn_is_atomic_restart_safe_and_idempotent(
 
     assert len(engine.calls) == 2
     assert [message.role for message in committed.messages] == [
+        *(["assistant"] * len(WELCOME_MESSAGES)),
         "assistant",
         "user",
         "assistant",
     ]
     assert [message.content for message in duplicate.messages] == [
+        *WELCOME_MESSAGES,
         "첫 질문입니다.",
         "첫 답변입니다.",
         "두 번째 질문입니다.",
     ]
     assert engine.calls[1]["messages"] == [
-        {"role": "assistant", "content": "첫 질문입니다."}
+        *({"role": "assistant", "content": text} for text in WELCOME_MESSAGES),
+        {"role": "assistant", "content": "첫 질문입니다."},
     ]
     assert committed.scorecard_items[0].ai_status == "positive"
 
@@ -230,6 +237,7 @@ def test_turn_is_atomic_restart_safe_and_idempotent(
     )
     assert reloaded is not None
     assert [message.content for message in reloaded.messages] == [
+        *WELCOME_MESSAGES,
         "첫 질문입니다.",
         "첫 답변입니다.",
         "두 번째 질문입니다.",
@@ -258,7 +266,8 @@ def test_failed_generation_commits_nothing_and_ownership_is_opaque(
             )
         )
 
-    assert db_session.scalar(select(func.count(InterviewMessage.id))) == 1
+    # Only the opening survives: the welcome and the first question.
+    assert db_session.scalar(select(func.count(InterviewMessage.id))) == len(WELCOME_MESSAGES) + 1
     db_session.commit()
     with pytest.raises(InterviewNotFound):
         asyncio.run(

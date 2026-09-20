@@ -19,6 +19,7 @@ interface ChatProps {
   retrying: boolean
   showComposer: boolean
   title?: ReactNode
+  typing?: boolean
 }
 
 function roleName(role: InterviewMessage['role']): string {
@@ -56,6 +57,7 @@ export function Chat({
   retrying,
   showComposer,
   title,
+  typing = false,
 }: ChatProps) {
   const submitLabel = retrying ? '다시 시도' : '답변 전송'
   const conversation = useRef<HTMLDivElement>(null)
@@ -63,7 +65,7 @@ export function Chat({
   useEffect(() => {
     const node = conversation.current
     if (node) node.scrollTop = node.scrollHeight
-  }, [messages.length, pendingMessage, isSending])
+  }, [messages.length, pendingMessage, isSending, typing])
 
   return (
     <>
@@ -96,6 +98,18 @@ export function Chat({
           {pendingMessage !== null && <li aria-label="참여자 메시지" className="flex justify-end">
             <p className={bubbleClass('user')}>{pendingMessage}</p>
           </li>}
+          {typing && <li className="flex justify-start">
+            <p aria-label="진행자가 입력하는 중" className={`${bubbleClass('assistant')} inline-flex items-center gap-1`} role="status">
+              {[0, 1, 2].map((dot) => (
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 animate-pulse rounded-full bg-foreground/50 motion-reduce:animate-none"
+                  key={dot}
+                  style={{ animationDelay: `${dot * 200}ms` }}
+                />
+              ))}
+            </p>
+          </li>}
           {isSending && <li className="flex justify-start">
             <p className={`${bubbleClass('assistant')} text-muted-foreground`} role="status">답변을 생성하는 중</p>
           </li>}
@@ -106,7 +120,7 @@ export function Chat({
           <label className="sr-only" htmlFor="interview-answer">답변 입력</label>
           <Textarea
             className="h-16 min-h-16 field-sizing-fixed resize-none"
-            disabled={isSending || retrying}
+            disabled={isSending || retrying || typing}
             id="interview-answer"
             onChange={(event) => onAnswerChange(event.target.value)}
             onKeyDown={submitOnEnter}
@@ -119,7 +133,7 @@ export function Chat({
           aria-busy={isSending}
           aria-label={submitLabel}
           className={retrying ? undefined : 'size-11 sm:size-9'}
-          disabled={isSending || (!retrying && !answer.trim())}
+          disabled={isSending || typing || (!retrying && !answer.trim())}
           size={retrying ? 'default' : 'icon'}
           type="submit"
         >

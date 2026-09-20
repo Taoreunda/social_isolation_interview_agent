@@ -15,6 +15,7 @@ from interview.engine import EngineTurnResult
 from interview.models import ExpertReview, Interview, InterviewMessage, ScorecardItem
 from interview.repository import InterviewRepository
 from interview.scorecard import Scorecard
+from interview.welcome import WELCOME_MESSAGES
 from sqlalchemy.orm import Session
 
 
@@ -142,14 +143,16 @@ class InterviewService:
                     updated_at=now,
                     completed_at=now if result.interview_complete else None,
                 )
-                interview.messages.append(
+                opening = (*WELCOME_MESSAGES, result.participant_message)
+                interview.messages.extend(
                     InterviewMessage(
-                        sequence=0,
+                        sequence=sequence,
                         role="assistant",
-                        content=result.participant_message,
+                        content=content,
                         client_turn_id=None,
                         created_at=now,
                     )
+                    for sequence, content in enumerate(opening)
                 )
                 self._apply_scorecard(interview, result.scorecard, now)
                 self.repository.add_interview(interview)

@@ -16,6 +16,7 @@ from auth.security import PasswordService
 from fastapi.testclient import TestClient
 from interview.engine import EngineTurnResult, InterviewGenerationError
 from interview.router import get_interview_engine
+from interview.welcome import WELCOME_MESSAGES
 from interview.models import Interview
 from interview.scorecard import Scorecard
 from sqlalchemy import select
@@ -206,7 +207,8 @@ def test_participant_start_requires_auth_origin_csrf_and_correct_role(
     assert started.status_code == 201
     assert started.json() == current.json()
     assert started.json()["status"] == "active"
-    assert started.json()["messages"][0]["content"] == "첫 질문입니다."
+    opening = [message["content"] for message in started.json()["messages"]]
+    assert opening == [*WELCOME_MESSAGES, "첫 질문입니다."]
     assert "participantCode" not in started.json()
     assert "scorecard" not in started.json()
     assert len(api_fake_engine.calls) == 1
@@ -276,7 +278,7 @@ def test_message_retry_ownership_and_generation_failure_are_safe(
     assert missing_csrf.status_code == 403
     assert committed.status_code == 200
     assert duplicate.json() == committed.json()
-    assert len(committed.json()["messages"]) == 3
+    assert len(committed.json()["messages"]) == len(WELCOME_MESSAGES) + 3
     assert failed.status_code == 503
     assert "secret upstream diagnostic" not in failed.text
     assert after_failure.json() == committed.json()
@@ -424,7 +426,7 @@ def test_an_administrator_can_run_an_interview_for_debugging(
             json={"clientTurnId": str(uuid4()), "content": "관리자 점검 응답"},
         )
         assert turn.status_code == 200
-        assert len(turn.json()["messages"]) == 3
+        assert len(turn.json()["messages"]) == len(WELCOME_MESSAGES) + 3
 
         listed = admin_client.get("/api/admin/interviews").json()
         own = next(row for row in listed if row["id"] == interview_id)
