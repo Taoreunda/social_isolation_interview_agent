@@ -129,20 +129,60 @@ describe('JudgmentFlow criteria and diagnosis', () => {
 })
 
 describe('JudgmentFlow detail', () => {
-  it('explains the question being asked, and any other lamp that is pressed', async () => {
-    const user = userEvent.setup()
+  it('reads as the question, then what makes it True and what makes it False', () => {
     render(<JudgmentFlow detail={detailWith(rowsWith({ A1: ['positive', '예'] }))} />)
 
     const detail = screen.getByTestId('lamp-detail')
     expect(detail).toHaveTextContent('A2')
-    expect(detail).toHaveTextContent('주 4회 미만 → True')
+    expect(detail).toHaveTextContent('A2 질문')
+    expect(within(detail).getByTestId('when-true')).toHaveTextContent('True → 주 4회 미만')
+    expect(within(detail).getByTestId('when-false')).toHaveTextContent('False → 주 4회 이상')
+    expect(detail).not.toHaveTextContent('지금 묻는 문항')
+    expect(within(detail).getByTestId('when-true')).toHaveAttribute('data-fired', 'false')
+    expect(within(detail).getByTestId('when-false')).toHaveAttribute('data-fired', 'false')
+  })
+
+  it('lights the line that fired and adds the value and the rationale', async () => {
+    const user = userEvent.setup()
+    render(<JudgmentFlow detail={detailWith(rowsWith({ A1: ['positive', '예'], A2: ['negative', '주 5회'] }))} />)
+    const detail = screen.getByTestId('lamp-detail')
 
     await user.click(screen.getByRole('button', { name: 'A1 True' }))
 
-    expect(detail).toHaveTextContent('A1')
-    expect(detail).toHaveTextContent('예 → True')
-    expect(detail).toHaveTextContent('예')
+    expect(detail).toHaveTextContent('A1 질문')
+    expect(within(detail).getByTestId('when-true')).toHaveTextContent('True → 예')
+    expect(within(detail).getByTestId('when-false')).toHaveTextContent('False → 아니요')
+    expect(within(detail).getByTestId('when-true')).toHaveAttribute('data-fired', 'true')
+    expect(within(detail).getByTestId('when-false')).toHaveAttribute('data-fired', 'false')
     expect(detail).toHaveTextContent('A1 근거')
     expect(screen.getByRole('button', { name: 'A1 True' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'A2 False' }))
+
+    expect(within(detail).getByTestId('when-false')).toHaveAttribute('data-fired', 'true')
+    expect(within(detail).getByTestId('when-false')).toHaveTextContent('False → 주 4회 이상')
+    expect(detail).toHaveTextContent('주 5회')
+  })
+
+  it('says a free response is recorded as spoken instead of inventing True and False', async () => {
+    const user = userEvent.setup()
+    render(<JudgmentFlow detail={detailWith(rowsWith({}))} />)
+
+    await user.click(screen.getByRole('button', { name: 'E1 아직' }))
+
+    const detail = screen.getByTestId('lamp-detail')
+    expect(detail).toHaveTextContent('판정 없음')
+    expect(within(detail).queryByTestId('when-true')).not.toBeInTheDocument()
+  })
+
+  it('notes when a question is only asked after another one was True', async () => {
+    const user = userEvent.setup()
+    render(<JudgmentFlow detail={detailWith(rowsWith({}))} />)
+
+    await user.click(screen.getByRole('button', { name: 'D1기간 아직' }))
+
+    const detail = screen.getByTestId('lamp-detail')
+    expect(within(detail).getByTestId('when-true')).toHaveTextContent('True → 3개월 이상')
+    expect(detail).toHaveTextContent('D1이 True일 때만 묻습니다')
   })
 })

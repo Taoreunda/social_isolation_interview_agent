@@ -29,21 +29,28 @@ const DIAGNOSES: { name: string; needs: Record<string, boolean> | null; rule: st
   { name: '일반', needs: null, rule: '그 외 (A·B·C 모두 False이면 D·E를 묻지 않고 종료)' },
 ]
 
-const CUT_OFF: Record<string, string> = {
-  A1: '예 → True · 아니요 → False',
-  A2: '주 4회 미만 → True · 4회 이상 → False',
-  A3: '6개월 이상 → True · 미만 → False',
-  B1: '0명 → True · 1명 이상 → False',
-  B2: '3개월 이상 → True · 미만 → False',
-  C1: '0명 → True · 1명 이상 → False',
-  C2: '3개월 이상 → True · 미만 → False',
-  D1: '고통 있음 또는 5점 이상 → True · 없음 또는 4점 이하 → False',
-  D1_duration: 'D1이 True일 때만 묻는다 · 3개월 이상 → True',
-  D2: '영향 있음 또는 5점 이상 → True · 없음 또는 4점 이하 → False',
-  D2_duration: 'D2가 True일 때만 묻는다 · 3개월 이상 → True',
-  E1: '판정 없음 · 말한 그대로 기록',
-  E2: '판정 없음 · 말한 그대로 기록',
+interface Rule {
+  whenTrue: string
+  whenFalse: string
+  note?: string
 }
+
+const RULE: Record<string, Rule> = {
+  A1: { whenTrue: '예', whenFalse: '아니요' },
+  A2: { whenTrue: '주 4회 미만', whenFalse: '주 4회 이상' },
+  A3: { whenTrue: '6개월 이상', whenFalse: '6개월 미만' },
+  B1: { whenTrue: '0명', whenFalse: '1명 이상' },
+  B2: { whenTrue: '3개월 이상', whenFalse: '3개월 미만' },
+  C1: { whenTrue: '0명', whenFalse: '1명 이상' },
+  C2: { whenTrue: '3개월 이상', whenFalse: '3개월 미만' },
+  D1: { whenTrue: '고통 있음 또는 5점 이상', whenFalse: '고통 없음 또는 4점 이하' },
+  D1_duration: { whenTrue: '3개월 이상', whenFalse: '3개월 미만', note: 'D1이 True일 때만 묻습니다' },
+  D2: { whenTrue: '영향 있음 또는 5점 이상', whenFalse: '영향 없음 또는 4점 이하' },
+  D2_duration: { whenTrue: '3개월 이상', whenFalse: '3개월 미만', note: 'D2가 True일 때만 묻습니다' },
+}
+
+// E1 and E2 are written down as spoken; nothing about them is True or False.
+const FREE_RESPONSE = new Set(['E1', 'E2'])
 
 // A duration question is only asked when its gate question was true.
 const GATE_OF: Record<string, string> = { D1_duration: 'D1', D2_duration: 'D2' }
@@ -112,6 +119,42 @@ function lightClass(state: LampState): string {
 
 function Light({ state, large = false }: { state: LampState; large?: boolean }) {
   return <span aria-hidden="true" className={`${large ? 'size-5' : 'size-4'} shrink-0 rounded-full border-2 ${lightClass(state)}`} data-testid="light" />
+}
+
+function RuleLine({ fired, kind, text }: { fired: boolean; kind: 'true' | 'false'; text: string }) {
+  return (
+    <p
+      className={`flex items-center gap-2 ${fired ? 'font-semibold' : 'text-muted-foreground'}`}
+      data-fired={fired ? 'true' : 'false'}
+      data-testid={kind === 'true' ? 'when-true' : 'when-false'}
+    >
+      <Light state={fired ? kind : 'empty'} />
+      <span>{kind === 'true' ? 'True' : 'False'} → {text}</span>
+    </p>
+  )
+}
+
+function DetailOf({ rowState, selected }: { rowState: LampState; selected: InterviewDetail['scorecard'][number] }) {
+  const rule = RULE[selected.questionId]
+  return (
+    <>
+      <p className="leading-6">
+        <span className="mr-2 font-mono font-semibold">{shortLabel(selected.questionId)}</span>
+        <span>{selected.question}</span>
+      </p>
+      {rule && <div className="mt-2 space-y-1">
+        <RuleLine fired={rowState === 'true'} kind="true" text={rule.whenTrue} />
+        <RuleLine fired={rowState === 'false'} kind="false" text={rule.whenFalse} />
+      </div>}
+      {FREE_RESPONSE.has(selected.questionId) && <p className="mt-2 text-xs text-muted-foreground">판정 없음 · 말한 그대로 기록합니다</p>}
+      {rule?.note && <p className="mt-2 text-xs text-muted-foreground">{rule.note}</p>}
+      {rowState === 'skipped' && <p className="mt-2 text-xs text-muted-foreground">묻지 않고 건너뛰었습니다</p>}
+      {(selected.value || selected.rationale) && <p className="mt-2 text-xs leading-5">
+        {selected.value && <span className="mr-2 font-semibold">{selected.value}</span>}
+        {selected.rationale && <span className="text-muted-foreground">{selected.rationale}</span>}
+      </p>}
+    </>
+  )
 }
 
 export function JudgmentFlow({ detail, showOutcome = true }: { detail: InterviewDetail; showOutcome?: boolean }) {
@@ -190,19 +233,10 @@ export function JudgmentFlow({ detail, showOutcome = true }: { detail: Interview
           )
         })}
       </ol>
-      <div className="mt-4 min-h-16 border-t border-border pt-3 text-xs" data-testid="lamp-detail">
+      <div className="mt-4 min-h-20 border-t border-border pt-3 text-sm" data-testid="lamp-detail">
         {selected
-          ? <>
-              <p className="flex flex-wrap items-baseline gap-x-2">
-                <span className="font-mono font-semibold">{shortLabel(selected.questionId)}</span>
-                <span>{STATE_NAME[states.get(selected.questionId) ?? 'empty']}</span>
-                {selected.value && <span className="font-medium">{selected.value}</span>}
-              </p>
-              <p className="mt-1 text-muted-foreground">{CUT_OFF[selected.questionId] ?? ''}</p>
-              <p className="mt-1 text-muted-foreground">{selected.question}</p>
-              {selected.rationale && <p className="mt-1">{selected.rationale}</p>}
-            </>
-          : <p className="text-muted-foreground">불을 누르면 그 문항의 기준과 값, 근거가 보입니다.</p>}
+          ? <DetailOf rowState={states.get(selected.questionId) ?? 'empty'} selected={selected} />
+          : <p className="text-xs text-muted-foreground">불을 누르면 그 문항의 질문과 True·False 기준, 값, 근거가 보입니다.</p>}
       </div>
     </section>
   )
