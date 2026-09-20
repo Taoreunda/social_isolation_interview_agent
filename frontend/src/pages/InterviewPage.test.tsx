@@ -673,3 +673,65 @@ describe('opening reveal', () => {
     expect(screen.getByLabelText('답변 입력')).toBeEnabled()
   })
 })
+
+describe('suggested replies', () => {
+  function withReplies(replies: { text: string; send: boolean }[]): ParticipantInterview {
+    return { ...cloneInterview(), suggestedReplies: replies }
+  }
+
+  it('offers the replies just above the composer and sends the one that is tapped', async () => {
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockResolvedValue(withReplies([{ text: '예', send: true }, { text: '아니요', send: true }])),
+    })
+    const user = userEvent.setup()
+    renderInterview(api)
+
+    const group = await screen.findByRole('group', { name: '추천 답변' })
+    const form = screen.getByLabelText('답변 입력').closest('form')!
+    expect(group.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(group).getAllByRole('button').map((button) => button.textContent)).toEqual(['예', '아니요'])
+
+    await user.click(within(group).getByRole('button', { name: '예' }))
+
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('interview-001', expect.any(String), '예'))
+  })
+
+  it('puts a reply that needs more into the composer instead of sending it', async () => {
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockResolvedValue(withReplies([{ text: '없습니다', send: true }, { text: '있습니다', send: false }])),
+    })
+    const user = userEvent.setup()
+    renderInterview(api)
+
+    await user.click(await screen.findByRole('button', { name: '있습니다' }))
+
+    expect(api.sendMessage).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('답변 입력')).toHaveValue('있습니다. ')
+    expect(screen.getByLabelText('답변 입력')).toHaveFocus()
+  })
+
+  it('stands apart from the bubbles in the accent colour', async () => {
+    const api = createApi({ getCurrentInterview: vi.fn().mockResolvedValue(withReplies([{ text: '예', send: true }])) })
+    renderInterview(api)
+
+    const reply = await screen.findByRole('button', { name: '예' })
+    expect(reply).toHaveClass('rounded-full', 'border-primary', 'text-primary')
+    expect(reply).not.toHaveClass('bg-muted')
+  })
+
+  it('steps aside while a turn is in flight and when there is nothing to suggest', async () => {
+    const pending = deferred<ParticipantInterview>()
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockResolvedValue(withReplies([{ text: '예', send: true }])),
+      sendMessage: vi.fn().mockReturnValue(pending.promise),
+    })
+    const user = userEvent.setup()
+    renderInterview(api)
+    await user.click(await screen.findByRole('button', { name: '예' }))
+
+    expect(screen.queryByRole('group', { name: '추천 답변' })).not.toBeInTheDocument()
+
+    await act(async () => pending.resolve(cloneInterview()))
+    expect(screen.queryByRole('group', { name: '추천 답변' })).not.toBeInTheDocument()
+  })
+})

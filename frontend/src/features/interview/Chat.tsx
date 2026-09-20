@@ -2,7 +2,7 @@ import { Send } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
 
-import type { InterviewMessage } from '@/app/contracts'
+import type { InterviewMessage, SuggestedReply } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,10 +14,12 @@ interface ChatProps {
   messages: InterviewMessage[]
   onAnswerChange: (answer: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onSuggestion?: (reply: SuggestedReply) => void
   pendingMessage: string | null
   progress: number
   retrying: boolean
   showComposer: boolean
+  suggestions?: SuggestedReply[]
   title?: ReactNode
   typing?: boolean
 }
@@ -52,14 +54,17 @@ export function Chat({
   messages,
   onAnswerChange,
   onSubmit,
+  onSuggestion,
   pendingMessage,
   progress,
   retrying,
   showComposer,
+  suggestions = [],
   title,
   typing = false,
 }: ChatProps) {
   const submitLabel = retrying ? '다시 시도' : '답변 전송'
+  const offerSuggestions = showComposer && !isSending && !retrying && !typing && suggestions.length > 0
   const conversation = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -115,7 +120,19 @@ export function Chat({
           </li>}
         </ol>
       </div>
-      {showComposer && <form className="flex min-w-0 items-end gap-2 border-t border-border pt-3" onSubmit={onSubmit}>
+      {offerSuggestions && <div aria-label="추천 답변" className="flex flex-wrap gap-2 border-t border-border pt-3" role="group">
+        {suggestions.map((reply) => (
+          <button
+            className="min-h-11 rounded-full border border-primary bg-primary/10 px-4 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-9"
+            key={reply.text}
+            onClick={() => onSuggestion?.(reply)}
+            type="button"
+          >
+            {reply.text}
+          </button>
+        ))}
+      </div>}
+      {showComposer && <form className={`flex min-w-0 items-end gap-2 pt-3 ${offerSuggestions ? '' : 'border-t border-border'}`} onSubmit={onSubmit}>
         <div className="min-w-0 flex-1">
           <label className="sr-only" htmlFor="interview-answer">답변 입력</label>
           <Textarea

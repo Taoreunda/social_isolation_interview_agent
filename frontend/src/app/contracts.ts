@@ -83,12 +83,19 @@ export interface InterviewDetail extends InterviewListItem {
   completedAt: string | null
 }
 
+// A reply the participant can tap; send=false puts it in the composer to be finished first.
+export interface SuggestedReply {
+  text: string
+  send: boolean
+}
+
 export interface ParticipantInterview {
   id: string
   status: InterviewStatus
   progress: number
   updatedAt: string
   messages: InterviewMessage[]
+  suggestedReplies?: SuggestedReply[]
 }
 
 export interface ReviewScorecardInput {

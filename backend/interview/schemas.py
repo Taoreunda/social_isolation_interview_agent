@@ -8,6 +8,7 @@ from uuid import UUID
 
 from auth.schemas import ApiSchema
 from interview.models import Interview
+from interview.suggestions import open_question_id, suggested_replies_for
 from pydantic import Field, model_validator
 
 InterviewStatus = Literal["active", "completed", "archived"]
@@ -33,12 +34,18 @@ class InterviewMessageResponse(ApiSchema):
     created_at: datetime
 
 
+class SuggestedReplyResponse(ApiSchema):
+    text: str
+    send: bool
+
+
 class ParticipantInterviewResponse(ApiSchema):
     id: UUID
     status: InterviewStatus
     progress: int
     updated_at: datetime
     messages: list[InterviewMessageResponse]
+    suggested_replies: list[SuggestedReplyResponse] = Field(default_factory=list)
 
 
 class InterviewListItemResponse(ApiSchema):
@@ -96,6 +103,10 @@ def participant_response(interview: Interview) -> ParticipantInterviewResponse:
                 created_at=message.created_at,
             )
             for message in interview.messages
+        ],
+        suggested_replies=[
+            SuggestedReplyResponse(text=reply.text, send=reply.send)
+            for reply in suggested_replies_for(open_question_id(interview))
         ],
     )
 

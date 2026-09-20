@@ -209,6 +209,10 @@ def test_participant_start_requires_auth_origin_csrf_and_correct_role(
     assert started.json()["status"] == "active"
     opening = [message["content"] for message in started.json()["messages"]]
     assert opening == [*WELCOME_MESSAGES, "첫 질문입니다."]
+    assert started.json()["suggestedReplies"] == [
+        {"text": "예", "send": True},
+        {"text": "아니요", "send": True},
+    ], "the open question arrives with the replies a participant can tap"
     assert "participantCode" not in started.json()
     assert "scorecard" not in started.json()
     assert len(api_fake_engine.calls) == 1

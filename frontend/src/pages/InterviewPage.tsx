@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useApi } from '@/app/api-context'
 import { hasApiStatus } from '@/app/api-error'
-import type { InterviewDetail, ParticipantInterview } from '@/app/contracts'
+import type { InterviewDetail, ParticipantInterview, SuggestedReply } from '@/app/contracts'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Chat } from '@/features/interview/Chat'
@@ -191,15 +191,27 @@ export function InterviewPage({ adminTools = false, debug = false, revealDelay =
     }
   }
 
-  async function submitAnswer(event: FormEvent<HTMLFormElement>): Promise<void> {
+  function submitAnswer(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
-    if (!interview || inFlight.current) return
-
     const turn = pendingTurn.current ?? (() => {
       const content = answer.trim()
       return content ? { clientTurnId: crypto.randomUUID(), content } : null
     })()
-    if (!turn) return
+    if (turn) void dispatchTurn(turn)
+  }
+
+  // A tapped reply is an answer like any other, unless it asks to be finished first.
+  function pickSuggestion(reply: SuggestedReply): void {
+    if (reply.send) {
+      if (!pendingTurn.current) void dispatchTurn({ clientTurnId: crypto.randomUUID(), content: reply.text })
+      return
+    }
+    setAnswer(`${reply.text}. `)
+    document.getElementById('interview-answer')?.focus()
+  }
+
+  async function dispatchTurn(turn: PendingTurn): Promise<void> {
+    if (!interview || inFlight.current) return
 
     pendingTurn.current = turn
     const operation = ++requestGeneration.current
@@ -347,7 +359,9 @@ export function InterviewPage({ adminTools = false, debug = false, revealDelay =
         messages={revealed === null ? interview.messages : interview.messages.slice(0, revealed)}
         typing={revealed !== null}
         onAnswerChange={setAnswer}
-        onSubmit={(event) => void submitAnswer(event)}
+        onSubmit={submitAnswer}
+        onSuggestion={pickSuggestion}
+        suggestions={interview.suggestedReplies}
         pendingMessage={pendingMessage}
         progress={interview.progress}
         retrying={retrying}
