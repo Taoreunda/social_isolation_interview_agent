@@ -119,13 +119,6 @@ describe('JudgmentFlow criteria and diagnosis', () => {
     expect(lamp('D1')).toHaveAttribute('data-state', 'skipped')
     expect(lamp('E2')).toHaveAttribute('data-state', 'skipped')
   })
-
-  it('can hide the diagnosis row where the outcome is already shown elsewhere', () => {
-    render(<JudgmentFlow detail={detailWith(rowsWith({}))} showOutcome={false} />)
-
-    expect(screen.queryByTestId('lamp-히키코모리')).not.toBeInTheDocument()
-    expect(screen.getByRole('list', { name: '판정 흐름' })).toBeInTheDocument()
-  })
 })
 
 describe('JudgmentFlow detail', () => {

@@ -69,7 +69,7 @@ function stoppedEarly(detail: InterviewDetail): boolean {
     .every((row) => row.aiStatus === null)
 }
 
-export function questionStates(detail: InterviewDetail): Map<string, LampState> {
+function questionStates(detail: InterviewDetail): Map<string, LampState> {
   const byId = new Map(detail.scorecard.map((row) => [row.questionId, row]))
   const earlyStop = stoppedEarly(detail)
   const states = new Map<string, LampState>()
@@ -157,7 +157,7 @@ function DetailOf({ rowState, selected }: { rowState: LampState; selected: Inter
   )
 }
 
-export function JudgmentFlow({ detail, showOutcome = true }: { detail: InterviewDetail; showOutcome?: boolean }) {
+export function JudgmentFlow({ detail }: { detail: InterviewDetail }) {
   const states = questionStates(detail)
   const current = detail.scorecard.find((row) => states.get(row.questionId) === 'current')?.questionId ?? null
   const [picked, setPicked] = useState<string | null>(null)
@@ -172,7 +172,7 @@ export function JudgmentFlow({ detail, showOutcome = true }: { detail: Interview
 
   return (
     <section aria-label="판정 흐름" className="text-sm">
-      {showOutcome && <ul aria-label="진단" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border pb-3">
+      <ul aria-label="진단" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border pb-3">
         {DIAGNOSES.map((diagnosis) => {
           const state = diagnosisState(detail, diagnosis)
           return (
@@ -190,8 +190,8 @@ export function JudgmentFlow({ detail, showOutcome = true }: { detail: Interview
           )
         })}
         <li className="ml-auto text-xs tabular-nums text-muted-foreground">{recorded} / {detail.scorecard.length}</li>
-      </ul>}
-      <ol aria-label="판정 흐름" className={`space-y-3 ${showOutcome ? 'mt-3' : ''}`}>
+      </ul>
+      <ol aria-label="판정 흐름" className="mt-3 space-y-3">
         {rows.map((row) => {
           const state = criterionState(detail.criteria[row.key])
           return (

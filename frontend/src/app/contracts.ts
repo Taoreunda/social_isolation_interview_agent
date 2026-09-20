@@ -1,6 +1,6 @@
 export type Role = 'participant' | 'admin'
 export type AccountStatus = 'active' | 'disabled' | 'admin_locked'
-export type InterviewStatus = 'active' | 'completed' | 'archived'
+type InterviewStatus = 'active' | 'completed' | 'archived'
 
 export interface CurrentUser {
   id: string
@@ -40,7 +40,7 @@ export interface ParticipantRecord {
 }
 
 // How a participant gave an answer; absent for the interviewer and for older records.
-export type AnswerSource = 'typed' | 'suggested'
+type AnswerSource = 'typed' | 'suggested'
 
 export interface InterviewMessage {
   id: string
