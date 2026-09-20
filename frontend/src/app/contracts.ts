@@ -1,4 +1,6 @@
-export type Role = 'participant' | 'admin'
+export type Role = 'participant' | 'reviewer' | 'admin'
+// Reviewers and administrators: accounts that work on the study rather than take part in it.
+export type StaffRole = Exclude<Role, 'participant'>
 export type AccountStatus = 'active' | 'disabled' | 'admin_locked'
 type InterviewStatus = 'active' | 'completed' | 'archived'
 
@@ -41,6 +43,24 @@ export interface ParticipantRecord {
 
 // How a participant gave an answer; absent for the interviewer and for older records.
 type AnswerSource = 'typed' | 'suggested'
+
+export interface StaffRecord {
+  id: string
+  username: string
+  role: StaffRole
+  status: AccountStatus
+  temporaryLockedUntil?: string | null
+}
+
+export interface CreateStaffInput {
+  username: string
+  role: StaffRole
+}
+
+export interface CreatedStaff {
+  staff: StaffRecord
+  assignedPassword: string
+}
 
 export interface InterviewMessage {
   id: string
@@ -125,6 +145,13 @@ export interface AppApi {
   disableParticipant(participantId: string): Promise<ParticipantRecord>
   enableParticipant(participantId: string): Promise<ParticipantRecord>
   unlockParticipant(participantId: string): Promise<ParticipantRecord>
+  listStaff(): Promise<StaffRecord[]>
+  createStaff(input: CreateStaffInput): Promise<CreatedStaff>
+  changeStaffRole(staffId: string, role: StaffRole): Promise<StaffRecord>
+  resetStaffPassword(staffId: string): Promise<PasswordResult>
+  disableStaff(staffId: string): Promise<StaffRecord>
+  enableStaff(staffId: string): Promise<StaffRecord>
+  unlockStaff(staffId: string): Promise<StaffRecord>
   listInterviews(): Promise<InterviewListItem[]>
   getInterview(interviewId: string): Promise<InterviewDetail>
   reviewScorecard(input: ReviewScorecardInput): Promise<InterviewDetail>

@@ -386,4 +386,35 @@ describe('HttpAppApi protected interviews', () => {
     expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({ clientTurnId: 'turn-1', content: '예', suggested: true })
     expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({ clientTurnId: 'turn-2', content: '직접 쓴 답' })
   })
+
+  it('manages reviewer and administrator accounts through the staff endpoints', async () => {
+    document.cookie = 'dabom_csrf=staff-token; Path=/'
+    const staff = { id: 's1', username: 'rv-kim', role: 'reviewer', status: 'active', temporaryLockedUntil: null }
+    const fetcher = vi.fn<typeof fetch>()
+      .mockImplementationOnce(async () => new Response(JSON.stringify([staff]), { status: 200 }))
+      .mockImplementationOnce(async () => new Response(JSON.stringify({ staff, assignedPassword: 'one-time-secret' }), { status: 201 }))
+      .mockImplementationOnce(async () => new Response(JSON.stringify({ ...staff, role: 'admin' }), { status: 200 }))
+      .mockImplementationOnce(async () => new Response(JSON.stringify({ assignedPassword: 'another-secret' }), { status: 200 }))
+      .mockImplementationOnce(async () => new Response(JSON.stringify({ ...staff, status: 'disabled' }), { status: 200 }))
+    const api = new HttpAppApi(fetcher)
+
+    await expect(api.listStaff()).resolves.toEqual([staff])
+    await expect(api.createStaff({ username: 'rv-kim', role: 'reviewer' })).resolves.toEqual({ staff, assignedPassword: 'one-time-secret' })
+    await expect(api.changeStaffRole('s1', 'admin')).resolves.toMatchObject({ role: 'admin' })
+    await expect(api.resetStaffPassword('s1')).resolves.toEqual({ assignedPassword: 'another-secret' })
+    await expect(api.disableStaff('s1')).resolves.toMatchObject({ status: 'disabled' })
+
+    expect(fetcher.mock.calls.map(([url, init]) => [init?.method, url])).toEqual([
+      ['GET', '/api/admin/staff'],
+      ['POST', '/api/admin/staff'],
+      ['POST', '/api/admin/staff/s1/role'],
+      ['POST', '/api/admin/staff/s1/password'],
+      ['POST', '/api/admin/staff/s1/disable'],
+    ])
+    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({ username: 'rv-kim', role: 'reviewer', generatePassword: true })
+    expect(JSON.parse(String(fetcher.mock.calls[2][1]?.body))).toEqual({ role: 'admin' })
+    for (const [, init] of fetcher.mock.calls.slice(1)) {
+      expect(new Headers(init?.headers).get('X-CSRF-Token')).toBe('staff-token')
+    }
+  })
 })

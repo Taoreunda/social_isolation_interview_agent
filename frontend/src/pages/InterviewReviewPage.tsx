@@ -46,7 +46,7 @@ function criterionLabel(key: string, met: boolean | null): string {
 const headerLinkClass =
   'inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm no-underline hover:bg-accent sm:min-h-9'
 
-export function InterviewReviewPage() {
+export function InterviewReviewPage({ canArchive = true }: { canArchive?: boolean }) {
   const api = useApi()
   const { interviewId = '' } = useParams()
   const [detail, setDetail] = useState<InterviewDetail | null>(null)
@@ -240,7 +240,7 @@ export function InterviewReviewPage() {
         <p className="mt-1 text-sm text-muted-foreground">{detail.participantCode}</p>
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        {detail.status !== 'archived' && <Button
+        {canArchive && detail.status !== 'archived' && <Button
           aria-busy={archiving}
           className="min-h-11 sm:min-h-9"
           disabled={archiving}

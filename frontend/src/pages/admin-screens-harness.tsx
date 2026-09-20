@@ -56,6 +56,8 @@ export function createApi(overrides: Partial<AppApi> = {}): AppApi {
     getCurrentInterview: vi.fn(), startInterview: vi.fn(), sendMessage: vi.fn(), listParticipants: vi.fn(),
     createParticipant: vi.fn(), resetParticipantPassword: vi.fn(), disableParticipant: vi.fn(), enableParticipant: vi.fn(),
     unlockParticipant: vi.fn(),
+    listStaff: vi.fn(), createStaff: vi.fn(), changeStaffRole: vi.fn(), resetStaffPassword: vi.fn(),
+    disableStaff: vi.fn(), enableStaff: vi.fn(), unlockStaff: vi.fn(),
     listInterviews: vi.fn().mockResolvedValue(clone(queue)),
     getInterview: vi.fn().mockResolvedValue(clone(detail)),
     reviewScorecard: vi.fn().mockResolvedValue(clone({

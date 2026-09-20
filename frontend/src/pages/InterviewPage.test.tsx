@@ -51,6 +51,8 @@ function createApi(overrides: Partial<AppApi> = {}): AppApi {
     disableParticipant: vi.fn(),
     enableParticipant: vi.fn(),
     unlockParticipant: vi.fn(),
+    listStaff: vi.fn(), createStaff: vi.fn(), changeStaffRole: vi.fn(), resetStaffPassword: vi.fn(),
+    disableStaff: vi.fn(), enableStaff: vi.fn(), unlockStaff: vi.fn(),
     listInterviews: vi.fn(),
     getInterview: vi.fn().mockImplementation(async () => detailOf()),
     reviewScorecard: vi.fn(),

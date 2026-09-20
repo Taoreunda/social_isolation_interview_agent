@@ -22,6 +22,12 @@ function InterviewRoute() {
   return <InterviewPage adminTools={user?.role === 'admin'} debug={searchParams.get('debug') === '1'} />
 }
 
+// Archiving an interview is an administrator's call; a reviewer reviews.
+function ReviewRoute() {
+  const { user } = useSession()
+  return <InterviewReviewPage canArchive={user?.role === 'admin'} />
+}
+
 function DefaultRoute() {
   const { user } = useSession()
   const destination = user ? homeFor(user.role) : '/login'
@@ -33,14 +39,18 @@ export function AppRoutes() {
     <Routes>
       <Route path="/login" element={<RequireGuest><LoginPage /></RequireGuest>} />
       {/* Every signed-in screen shares one layout, so the tabs never change under the user. */}
-      <Route element={<RequireRole role={['participant', 'admin']}><AppLayout /></RequireRole>}>
-        <Route path="/interview" element={<InterviewRoute />} />
+      <Route element={<RequireRole role={['participant', 'reviewer', 'admin']}><AppLayout /></RequireRole>}>
         <Route path="/account/password" element={<PasswordPage />} />
-        <Route element={<RequireRole role="admin"><Outlet /></RequireRole>}>
+        <Route element={<RequireRole role={['participant', 'admin']}><Outlet /></RequireRole>}>
+          <Route path="/interview" element={<InterviewRoute />} />
+        </Route>
+        <Route element={<RequireRole role={['reviewer', 'admin']}><Outlet /></RequireRole>}>
           <Route path="/admin" element={<AdminDashboardPage />} />
-          <Route path="/admin/participants" element={<ParticipantsPage />} />
-          <Route path="/admin/interviews/:interviewId" element={<InterviewReviewPage />} />
+          <Route path="/admin/interviews/:interviewId" element={<ReviewRoute />} />
           <Route path="/admin/interviews/:interviewId/transcript" element={<InterviewTranscriptPage />} />
+        </Route>
+        <Route element={<RequireRole role="admin"><Outlet /></RequireRole>}>
+          <Route path="/admin/accounts" element={<ParticipantsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<DefaultRoute />} />

@@ -17,20 +17,27 @@ interface Tab {
 }
 
 // One set of tabs per role, the same on every screen that role can open.
+const REVIEW: Tab = { to: '/admin', label: '검토', icon: ClipboardList, alsoCurrentUnder: '/admin/interviews/' }
+const MY_ACCOUNT: Tab = { to: '/account/password', label: '내 계정', icon: KeyRound }
+
 const TABS: Record<Role, Tab[]> = {
   admin: [
-    { to: '/admin', label: '검토', icon: ClipboardList, alsoCurrentUnder: '/admin/interviews/' },
-    { to: '/admin/participants', label: '참여자', icon: Users },
+    REVIEW,
+    { to: '/admin/accounts', label: '계정 관리', icon: Users },
     { to: '/interview', label: '인터뷰 해보기', icon: MessageSquare },
-    { to: '/account/password', label: '계정', icon: KeyRound },
+    MY_ACCOUNT,
   ],
-  participant: [
-    { to: '/interview', label: '인터뷰', icon: MessageSquare },
-    { to: '/account/password', label: '계정', icon: KeyRound },
-  ],
+  reviewer: [REVIEW, MY_ACCOUNT],
+  participant: [{ to: '/interview', label: '인터뷰', icon: MessageSquare }, MY_ACCOUNT],
 }
 
-const NAVIGATION_NAME: Record<Role, string> = { admin: '관리자 탐색', participant: '참여자 탐색' }
+const NAVIGATION_NAME: Record<Role, string> = {
+  admin: '관리자 탐색',
+  reviewer: '검토자 탐색',
+  participant: '참여자 탐색',
+}
+
+const ROLE_LABEL: Record<Role, string> = { admin: '관리자', reviewer: '검토자', participant: '참가자' }
 
 export function AppLayout() {
   const { user, isLoggingOut, logout } = useSession()
@@ -94,7 +101,10 @@ export function AppLayout() {
               디버깅
             </Button>
           )}
-          <span className="min-w-0 truncate" title={user?.username}>{user?.username}</span>
+          <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+            <span className="min-w-0 truncate" title={user?.username}>{user?.username}</span>
+            <span className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{ROLE_LABEL[role]}</span>
+          </span>
           <Button
             aria-busy={isLoggingOut}
             className="shrink-0"

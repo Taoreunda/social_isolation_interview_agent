@@ -277,7 +277,7 @@ describe('complete application route tree', () => {
   })
 
   it.each([
-    { role: 'participant', entry: '/admin/participants', expectedPath: '/interview', heading: '인터뷰 진행 중' },
+    { role: 'participant', entry: '/admin/accounts', expectedPath: '/interview', heading: '인터뷰 진행 중' },
     { role: 'participant', entry: '/admin/interviews/interview-001', expectedPath: '/interview', heading: '인터뷰 진행 중' },
   ])('redirects a $role away from the cross-role route $entry', async ({ role, entry, expectedPath, heading }) => {
     const api = new MockAppApi()
@@ -309,7 +309,7 @@ describe('complete application route tree', () => {
     renderCompleteRoutes(api, '/interview')
     await screen.findByRole('heading', { name: '인터뷰 진행 중' })
 
-    await userEvent.setup().click(screen.getByRole('link', { name: '계정' }))
+    await userEvent.setup().click(screen.getByRole('link', { name: '내 계정' }))
 
     expect(await screen.findByRole('heading', { name: '비밀번호 변경' })).toBeInTheDocument()
     expect(screen.getByTestId('location-path')).toHaveTextContent('/account/password')
@@ -357,7 +357,7 @@ describe('complete application route tree', () => {
     expect(screen.getByTestId('location-path')).toHaveTextContent(entry)
   })
 
-  it.each(['/admin', '/admin/participants', '/interview', '/account/password'])(
+  it.each(['/admin', '/admin/accounts', '/interview', '/account/password'])(
     'shows an administrator the same tabs in the same order on %s',
     async (entry) => {
       const api = new MockAppApi()
@@ -368,13 +368,71 @@ describe('complete application route tree', () => {
       const navigation = await screen.findByRole('navigation', { name: '관리자 탐색' })
       expect(within(navigation).getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
         ['검토', '/admin'],
-        ['참여자', '/admin/participants'],
+        ['계정 관리', '/admin/accounts'],
         ['인터뷰 해보기', '/interview'],
-        ['계정', '/account/password'],
+        ['내 계정', '/account/password'],
       ])
       expect(screen.queryByRole('navigation', { name: '참여자 탐색' })).not.toBeInTheDocument()
     },
   )
+
+  it.each([
+    { username: 'admin', label: '관리자' },
+    { username: 'reviewer', label: '검토자' },
+    { username: 'participant01', label: '참가자' },
+  ])('says in the header that $username is a $label', async ({ username, label }) => {
+    const api = new MockAppApi()
+    await api.login({ username, password: 'research123!', remember: false })
+
+    renderCompleteRoutes(api, '/')
+
+    const banner = await screen.findByRole('banner')
+    expect(await within(banner).findByText(username)).toBeInTheDocument()
+    expect(within(banner).getByText(label)).toBeInTheDocument()
+  })
+
+  it('gives a reviewer the review tabs and nothing else', async () => {
+    const api = new MockAppApi()
+    await api.login({ username: 'reviewer', password: 'research123!', remember: false })
+
+    renderCompleteRoutes(api, '/')
+
+    expect(await screen.findByRole('heading', { name: '검토' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/admin')
+    const navigation = screen.getByRole('navigation', { name: '검토자 탐색' })
+    expect(within(navigation).getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+      ['검토', '/admin'],
+      ['내 계정', '/account/password'],
+    ])
+  })
+
+  it.each(['/interview', '/admin/accounts'])('sends a reviewer away from %s', async (entry) => {
+    const api = new MockAppApi()
+    await api.login({ username: 'reviewer', password: 'research123!', remember: false })
+
+    renderCompleteRoutes(api, entry)
+
+    expect(await screen.findByRole('heading', { name: '검토' })).toBeInTheDocument()
+    expect(screen.getByTestId('location-path')).toHaveTextContent('/admin')
+  })
+
+  it('lets a reviewer judge an interview but leaves archiving to an administrator', async () => {
+    const reviewerApi = new MockAppApi()
+    await reviewerApi.login({ username: 'reviewer', password: 'research123!', remember: false })
+    const { unmount } = renderCompleteRoutes(reviewerApi, '/admin/interviews/interview-001')
+
+    expect(await screen.findByRole('heading', { name: '인터뷰 검토' })).toBeInTheDocument()
+    expect((await screen.findAllByRole('button', { name: /맞음/ })).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'CSV 다운로드' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /보관/ })).not.toBeInTheDocument()
+    unmount()
+
+    const adminApi = new MockAppApi()
+    await adminApi.login({ username: 'admin', password: 'research123!', remember: false })
+    renderCompleteRoutes(adminApi, '/admin/interviews/interview-001')
+
+    expect(await screen.findByRole('button', { name: /보관/ })).toBeInTheDocument()
+  })
 
   it('offers the debugging switch only on the interview screen', async () => {
     const api = new MockAppApi()
@@ -418,7 +476,7 @@ describe('complete application route tree', () => {
 
     expect(await screen.findByRole('heading', { name: '인터뷰 진행 중' })).toBeInTheDocument()
     const navigation = screen.getByRole('navigation', { name: '참여자 탐색' })
-    expect(within(navigation).getAllByRole('link').map((link) => link.textContent)).toEqual(['인터뷰', '계정'])
+    expect(within(navigation).getAllByRole('link').map((link) => link.textContent)).toEqual(['인터뷰', '내 계정'])
     expect(screen.queryByRole('button', { name: '디버깅' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '처음부터 다시' })).not.toBeInTheDocument()
   })

@@ -16,6 +16,7 @@ export interface MockAccountFixture {
 export const mockCredentials = {
   admin: { username: 'admin', password: 'research123!' },
   participant: { username: 'participant01', password: 'research123!' },
+  reviewer: { username: 'reviewer', password: 'research123!' },
 } as const
 
 export interface MockInterviewFixture extends InterviewDetail {
@@ -41,6 +42,15 @@ const adminAccount: MockAccountFixture = {
   username: 'admin',
   passwordVerifier: '894fef4b32d4e056e279f60ee0376c7bc20f25acace0887182df7b134e2d8a63',
   role: 'admin',
+  participantCode: null,
+  status: 'active',
+}
+
+const reviewerAccount: MockAccountFixture = {
+  id: 'reviewer-001',
+  username: 'reviewer',
+  passwordVerifier: '894fef4b32d4e056e279f60ee0376c7bc20f25acace0887182df7b134e2d8a63',
+  role: 'reviewer',
   participantCode: null,
   status: 'active',
 }
@@ -91,7 +101,7 @@ const participantInterview: MockInterviewFixture = {
 }
 
 const state: MockFixtureState = {
-  accounts: [participantAccount, adminAccount],
+  accounts: [participantAccount, adminAccount, reviewerAccount],
   interviews: [participantInterview],
 }
 

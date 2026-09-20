@@ -1,9 +1,11 @@
 import type {
-  CreatedParticipant,
-  ExportSelection,
   AppApi,
   CreateParticipantInput,
+  CreateStaffInput,
+  CreatedParticipant,
+  CreatedStaff,
   CurrentUser,
+  ExportSelection,
   InterviewDetail,
   InterviewListItem,
   LoginInput,
@@ -11,6 +13,8 @@ import type {
   ParticipantRecord,
   PasswordResult,
   ReviewScorecardInput,
+  StaffRecord,
+  StaffRole,
 } from '../app/contracts'
 import { ApiError } from '../app/api-error'
 import {
@@ -232,20 +236,86 @@ export class MockAppApi implements AppApi {
     return this.toParticipantRecord(account)
   }
 
-  async listInterviews(): Promise<InterviewListItem[]> {
+  async listStaff(): Promise<StaffRecord[]> {
     this.requireAdmin()
+    return this.state.accounts
+      .filter((account) => account.role !== 'participant')
+      .map((account) => this.toStaffRecord(account))
+  }
+
+  async createStaff(input: CreateStaffInput): Promise<CreatedStaff> {
+    this.requireAdmin()
+    const username = input.username.trim()
+    if (this.state.accounts.some((account) => account.username.toLowerCase() === username.toLowerCase())) {
+      throw new ApiError(409, 'Username already exists')
+    }
+    const assignedPassword = `assigned-${username}-password`
+    const account: MockAccountFixture = {
+      id: `staff-${(this.state.accounts.length + 1).toString().padStart(3, '0')}`,
+      username,
+      passwordVerifier: await this.passwordVerifier(assignedPassword),
+      role: input.role,
+      participantCode: null,
+      status: 'active',
+    }
+    this.state.accounts.push(account)
+    return { staff: this.toStaffRecord(account), assignedPassword }
+  }
+
+  async changeStaffRole(staffId: string, role: StaffRole): Promise<StaffRecord> {
+    const actor = this.requireAdmin()
+    const account = this.findStaff(staffId)
+    if (account.id === actor.id || account.role === role) throw new ApiError(409, 'Role cannot be changed')
+    account.role = role
+    return this.toStaffRecord(account)
+  }
+
+  async resetStaffPassword(staffId: string): Promise<PasswordResult> {
+    this.requireAdmin()
+    const account = this.findStaff(staffId)
+    const assignedPassword = `reset-${account.username}-password`
+    account.passwordVerifier = await this.passwordVerifier(assignedPassword)
+    return { assignedPassword }
+  }
+
+  async disableStaff(staffId: string): Promise<StaffRecord> {
+    const actor = this.requireAdmin()
+    const account = this.findStaff(staffId)
+    if (account.id === actor.id || account.status === 'disabled') throw new ApiError(409, 'Account cannot be disabled')
+    account.status = 'disabled'
+    return this.toStaffRecord(account)
+  }
+
+  async enableStaff(staffId: string): Promise<StaffRecord> {
+    this.requireAdmin()
+    const account = this.findStaff(staffId)
+    if (account.status !== 'disabled') throw new ApiError(409, 'Account is not disabled')
+    account.status = 'active'
+    return this.toStaffRecord(account)
+  }
+
+  async unlockStaff(staffId: string): Promise<StaffRecord> {
+    this.requireAdmin()
+    const account = this.findStaff(staffId)
+    if (account.status !== 'admin_locked') throw new ApiError(409, 'Account is not locked')
+    account.status = 'active'
+    return this.toStaffRecord(account)
+  }
+
+  async listInterviews(): Promise<InterviewListItem[]> {
+    this.requireReviewer()
     return this.state.interviews.map(({ messages: _messages, scorecard: _scorecard, participantId: _participantId, ...item }) =>
       this.clone(item),
     )
   }
 
   async getInterview(interviewId: string): Promise<InterviewDetail> {
-    this.requireAdmin()
+    this.requireReviewer()
     return this.clone(this.findInterview(interviewId))
   }
 
   async reviewScorecard(input: ReviewScorecardInput): Promise<InterviewDetail> {
-    this.requireAdmin()
+    this.requireReviewer()
     const interview = this.findInterview(input.interviewId)
     const row = interview.scorecard.find((candidate) => candidate.questionId === input.questionId)
     if (!row) throw new ApiError(404, 'Scorecard row not found')
@@ -280,12 +350,12 @@ export class MockAppApi implements AppApi {
   }
 
   async exportInterviewCsv(interviewId: string): Promise<Blob> {
-    this.requireAdmin()
+    this.requireReviewer()
     return this.csvBlob([this.findInterview(interviewId)])
   }
 
   async exportInterviewsCsv(selection: ExportSelection): Promise<Blob> {
-    this.requireAdmin()
+    this.requireReviewer()
     const byInterview = new Set(selection.interviewIds ?? [])
     const byParticipant = new Set(selection.participantIds ?? [])
     let chosen = this.state.interviews
@@ -365,6 +435,22 @@ export class MockAppApi implements AppApi {
       throw new ApiError(403, 'Interview access required')
     }
     return account
+  }
+
+  private requireReviewer(): MockAccountFixture {
+    const account = this.requireCurrentAccount()
+    if (account.role !== 'reviewer' && account.role !== 'admin') throw new ApiError(403, 'Reviewer access required')
+    return account
+  }
+
+  private findStaff(staffId: string): MockAccountFixture {
+    const account = this.state.accounts.find((candidate) => candidate.id === staffId && candidate.role !== 'participant')
+    if (!account) throw new ApiError(404, 'Staff account not found')
+    return account
+  }
+
+  private toStaffRecord(account: MockAccountFixture): StaffRecord {
+    return this.clone({ id: account.id, username: account.username, role: account.role as StaffRole, status: account.status })
   }
 
   private requireAdmin(): MockAccountFixture {

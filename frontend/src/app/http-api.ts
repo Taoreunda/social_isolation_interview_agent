@@ -1,11 +1,13 @@
 import { ApiError } from './api-error'
 import type {
-  CreatedParticipant,
-  ExportSelection,
   AccountStatus,
   AppApi,
   CreateParticipantInput,
+  CreateStaffInput,
+  CreatedParticipant,
+  CreatedStaff,
   CurrentUser,
+  ExportSelection,
   InterviewDetail,
   InterviewListItem,
   LoginInput,
@@ -13,6 +15,8 @@ import type {
   ParticipantRecord,
   PasswordResult,
   ReviewScorecardInput,
+  StaffRecord,
+  StaffRole,
 } from './contracts'
 
 export type HttpFetcher = (
@@ -127,6 +131,66 @@ export class HttpAppApi implements AppApi {
 
   async unlockParticipant(participantId: string): Promise<ParticipantRecord> {
     return this.updateParticipantState(participantId, 'unlock')
+  }
+
+  async listStaff(): Promise<StaffRecord[]> {
+    return this.requestJson<StaffRecord[]>('/api/admin/staff', { method: 'GET' })
+  }
+
+  async createStaff(input: CreateStaffInput): Promise<CreatedStaff> {
+    const created = await this.requestJson<{ staff: StaffRecord; assignedPassword: string | null }>(
+      '/api/admin/staff',
+      this.withCsrf({
+        body: JSON.stringify({ username: input.username, role: input.role, generatePassword: true }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+    )
+    if (!created.assignedPassword) throw new ApiError(502, '비밀번호 응답을 확인할 수 없습니다.')
+    return { staff: created.staff, assignedPassword: created.assignedPassword }
+  }
+
+  async changeStaffRole(staffId: string, role: StaffRole): Promise<StaffRecord> {
+    return this.requestJson<StaffRecord>(
+      `/api/admin/staff/${encodeURIComponent(staffId)}/role`,
+      this.withCsrf({
+        body: JSON.stringify({ role }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+    )
+  }
+
+  async resetStaffPassword(staffId: string): Promise<PasswordResult> {
+    const result = await this.requestJson<{ assignedPassword: string | null }>(
+      `/api/admin/staff/${encodeURIComponent(staffId)}/password`,
+      this.withCsrf({
+        body: JSON.stringify({ generatePassword: true }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+    )
+    if (!result.assignedPassword) throw new ApiError(502, '비밀번호 응답을 확인할 수 없습니다.')
+    return { assignedPassword: result.assignedPassword }
+  }
+
+  async disableStaff(staffId: string): Promise<StaffRecord> {
+    return this.updateStaffState(staffId, 'disable')
+  }
+
+  async enableStaff(staffId: string): Promise<StaffRecord> {
+    return this.updateStaffState(staffId, 'enable')
+  }
+
+  async unlockStaff(staffId: string): Promise<StaffRecord> {
+    return this.updateStaffState(staffId, 'unlock')
+  }
+
+  private updateStaffState(staffId: string, action: 'disable' | 'enable' | 'unlock'): Promise<StaffRecord> {
+    return this.requestJson<StaffRecord>(
+      `/api/admin/staff/${encodeURIComponent(staffId)}/${action}`,
+      this.withCsrf({ method: 'POST' }),
+    )
   }
 
   async getCurrentInterview(): Promise<ParticipantInterview> {
