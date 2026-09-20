@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from app_core.paths import FLOW_CONFIG_PATH
 
-from .prompts import PROMPT_TEMPLATES
+from .criteria import FREE_RESPONSE_CRITERIA, QUESTION_CRITERIA
 
 
 @lru_cache(maxsize=1)
@@ -335,7 +335,7 @@ class Scorecard:
         return None
 
     def get_criteria_text(self, question_id: str) -> str:
-        """prompts.py에서 해당 질문 평가 기준 텍스트 반환."""
+        """해당 질문의 평가 기준 텍스트 반환 (criteria.py)."""
         item = self.items.get(question_id)
         if not item:
             return ""
@@ -394,7 +394,7 @@ class Scorecard:
     # ------------------------------------------------------------------
 
     def _build_items(self, config: Dict[str, Any]) -> None:
-        """interview_flow.json에서 질문 텍스트 + 평가 기준 로드."""
+        """interview_flow.json에서 질문 텍스트를, criteria.py에서 평가 기준을 로드."""
         nodes = config.get("nodes", {})
 
         preferred_order = [
@@ -412,22 +412,13 @@ class Scorecard:
                 continue
 
             question_text = node.get("question_text", "")
-            prompt_key = (node.get("llm_chain") or {}).get("prompt_key")
             max_clarifications = int(node.get("max_clarifications", 3))
-
-            # Build criteria text from prompts.py
-            criteria_text = ""
-            if prompt_key and prompt_key in PROMPT_TEMPLATES:
-                template_fn = PROMPT_TEMPLATES[prompt_key]
-                if callable(template_fn):
-                    full_prompt = str(template_fn(question_text))
-                    criteria_text = self._extract_criteria(full_prompt)
+            criteria_text = QUESTION_CRITERIA.get(qid, "")
 
             # E1/E2 have no LLM evaluation
             if qid in _E_QUESTIONS:
                 max_clarifications = 0
-                if not criteria_text:
-                    criteria_text = "자유 응답. status='recorded'로 기입."
+                criteria_text = FREE_RESPONSE_CRITERIA
 
             self.items[qid] = {
                 "question": question_text,
@@ -441,27 +432,6 @@ class Scorecard:
             }
 
         self.question_order = [qid for qid in preferred_order if qid in self.items]
-
-    def _extract_criteria(self, full_prompt: str) -> str:
-        """프롬프트에서 평가 기준 섹션만 추출."""
-        lines = full_prompt.split("\n")
-        criteria_lines = []
-        capture = False
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("평가 기준:") or stripped.startswith("판단 기준:"):
-                capture = True
-                criteria_lines.append(stripped)
-                continue
-            if capture:
-                if stripped.startswith("응답 형식") or stripped.startswith("예시:"):
-                    break
-                if stripped.startswith("지침:") or stripped.startswith("주의사항:"):
-                    criteria_lines.append(stripped)
-                    continue
-                if stripped:
-                    criteria_lines.append(stripped)
-        return "\n".join(criteria_lines)
 
     def _build_tool_response(self, header: str) -> str:
         """ToolMessage 반환 포맷 구성."""

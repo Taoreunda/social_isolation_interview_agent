@@ -11,7 +11,7 @@ The product has two roles only: `participant` and `admin`. Do not add public sig
 - `backend/api.py`: FastAPI composition, CORS, liveness, and readiness
 - `backend/auth/`: accounts, login lockout, server sessions, CSRF/role dependencies, participant administration, and CLI
 - `backend/interview/engine.py`: two-node LangGraph ReAct engine and persisted-turn adapter
-- `backend/interview/scorecard.py`, `tools.py`, `prompts.py`: deterministic scorecard and model protocol
+- `backend/interview/scorecard.py`, `tools.py`, `criteria.py`: deterministic scorecard, model protocol, and the judging criteria handed to the interviewer
 - `backend/interview/models.py`, `repository.py`, `service.py`, `router.py`, `schemas.py`: PostgreSQL interview boundary
 - `backend/migrations/`: Alembic schema; PostgreSQL is the only database target
 - `frontend/src/app/`: API contracts, live HTTP adapter, auth state, and routing

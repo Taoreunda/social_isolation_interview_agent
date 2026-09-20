@@ -3,89 +3,56 @@
     "A1": {
       "type": "question",
       "question_text": "지난 1달 동안, 하루 중 대부분, 거의 매일 집 혹은 방에서 시간을 보냈습니까?",
-      "llm_chain": {
-        "prompt_key": "A1"
-      },
       "max_clarifications": 3
     },
     "A2": {
       "type": "question",
       "question_text": "지난 1달 동안, 일주일에 평균적으로 몇 번 외출하였습니까? (분리수거·생필품 구매를 위한 외출은 제외)",
-      "llm_chain": {
-        "prompt_key": "A2"
-      },
       "max_clarifications": 3
     },
     "A3": {
       "type": "question",
       "question_text": "이러한 기간이 얼마나 오래 지속되었습니까? (예: 3개월, 6개월, 1년 등)",
-      "llm_chain": {
-        "prompt_key": "A3"
-      },
       "max_clarifications": 3
     },
     "B1": {
       "type": "question",
       "question_text": "지난 1달 동안 직장 또는 사적 영역에서 유의미한 상호작용을 꾸준히 지속한 사람이 몇 명입니까? (동거인·가족 제외, 오직 온라인만의 관계 제외, 0명 가능)",
-      "llm_chain": {
-        "prompt_key": "B1"
-      },
       "max_clarifications": 3
     },
     "B2": {
       "type": "question",
       "question_text": "이러한 기간이 얼마나 오래 지속되었습니까?",
-      "llm_chain": {
-        "prompt_key": "B2"
-      },
       "max_clarifications": 3
     },
     "C1": {
       "type": "question",
       "question_text": "지난 1달 동안, 필요할 때 의지할 수 있는 사람이 몇 명입니까? (0명 가능, 온라인만/동거인/가족 제외)",
-      "llm_chain": {
-        "prompt_key": "C1"
-      },
       "max_clarifications": 3
     },
     "C2": {
       "type": "question",
       "question_text": "그러한 상태가 얼마나 오래 지속되었습니까?",
-      "llm_chain": {
-        "prompt_key": "C2"
-      },
       "max_clarifications": 3
     },
     "D1": {
       "type": "question",
       "question_text": "지난 1달 동안, 고립된 생활로 인해 정서적 고통을 느꼈습니까? (또는 주변 사람이 고통을 느꼈습니까?) 느꼈다면 1~10점은 몇 점입니까?",
-      "llm_chain": {
-        "prompt_key": "D1"
-      },
       "max_clarifications": 3
     },
     "D1_duration": {
       "type": "question",
       "question_text": "그러한 정서적 고통은 얼마나 오래 지속되었습니까?",
-      "llm_chain": {
-        "prompt_key": "D1_duration"
-      },
       "max_clarifications": 3
     },
     "D2": {
       "type": "question",
       "question_text": "지난 1달 동안, 고립된 생활이 학업/직업/구직/양육/일상 기능(위생·식사 등)에 부정적 영향을 미쳤습니까? 미쳤다면 1~10점은 몇 점입니까?",
-      "llm_chain": {
-        "prompt_key": "D2"
-      },
       "max_clarifications": 3
     },
     "D2_duration": {
       "type": "question",
       "question_text": "그러한 기능 손상은 얼마나 오래 지속되었습니까?",
-      "llm_chain": {
-        "prompt_key": "D2_duration"
-      },
       "max_clarifications": 3
     },
     "E1": {

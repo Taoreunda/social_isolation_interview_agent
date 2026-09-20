@@ -14,7 +14,7 @@ const STATE_NAME: Record<LampState, string> = {
 }
 
 // Criteria, rules and cut-offs as the interviewer applies them; keep in step
-// with backend/interview/scorecard.py, prompts.py and docs/interview-flow.md.
+// with backend/interview/scorecard.py, criteria.py and docs/interview-flow.md.
 const ROWS: { key: string; rule: string | null }[] = [
   { key: 'A', rule: 'A3 그리고 (A1 또는 A2)' },
   { key: 'B', rule: 'B1 그리고 B2' },

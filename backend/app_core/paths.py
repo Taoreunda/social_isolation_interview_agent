@@ -15,8 +15,6 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_DIR.parent
 
 # Runtime data / config locations (cwd-independent)
-DATA_DIR = REPO_ROOT / "data"
-LOGS_DIR = REPO_ROOT / "logs"
 FLOW_CONFIG_PATH = REPO_ROOT / "interview_flow.json"
 
-__all__ = ["BACKEND_DIR", "REPO_ROOT", "DATA_DIR", "LOGS_DIR", "FLOW_CONFIG_PATH"]
+__all__ = ["BACKEND_DIR", "REPO_ROOT", "FLOW_CONFIG_PATH"]

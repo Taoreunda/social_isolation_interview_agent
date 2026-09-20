@@ -282,25 +282,3 @@ def require_interview_subject_csrf(
             detail="인터뷰 권한이 필요합니다.",
         )
     return identity
-
-
-def require_participant(
-    identity: RequestIdentity = Depends(require_current_user),
-) -> RequestIdentity:
-    if identity.context.account.role != Role.PARTICIPANT.value:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="참여자 권한이 필요합니다.",
-        )
-    return identity
-
-
-def require_participant_csrf(
-    identity: RequestIdentity = Depends(require_csrf),
-) -> RequestIdentity:
-    if identity.context.account.role != Role.PARTICIPANT.value:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="참여자 권한이 필요합니다.",
-        )
-    return identity

@@ -1,6 +1,6 @@
 # 고립 챗봇 면담 흐름
 
-13문항, 판정 기준(cut-off), 분기, 진단 규칙을 코드(`interview_flow.json`, `backend/interview/prompts.py`, `backend/interview/scorecard.py`, `backend/interview/engine.py`)에서 그대로 옮긴 문서다. 코드가 바뀌면 이 문서도 같이 고친다.
+13문항, 판정 기준(cut-off), 분기, 진단 규칙을 코드(`interview_flow.json`, `backend/interview/criteria.py`, `backend/interview/scorecard.py`, `backend/interview/engine.py`)에서 그대로 옮긴 문서다. 코드가 바뀌면 이 문서도 같이 고친다.
 
 ## 환영 메시지
 
