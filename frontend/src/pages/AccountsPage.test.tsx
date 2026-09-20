@@ -6,7 +6,7 @@ import { ApiProvider } from '@/app/api-context'
 import type { CreatedParticipant, CreateParticipantInput, ParticipantRecord, PasswordResult } from '@/app/contracts'
 import { mockCredentials } from '@/mocks/fixtures'
 import { MockAppApi } from '@/mocks/mock-api'
-import { ParticipantsPage } from './ParticipantsPage'
+import { AccountsPage } from './AccountsPage'
 
 const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'clipboard')
 const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')
@@ -52,12 +52,12 @@ function storageValues(storage: Storage): string[] {
   return Array.from({ length: storage.length }, (_, index) => storage.getItem(storage.key(index)!) ?? '')
 }
 
-async function renderParticipantsPage() {
+async function renderAccountsPage() {
   const api = new MockAppApi()
   await api.login({ username: 'admin', password: 'research123!', remember: false })
   render(
     <ApiProvider api={api}>
-      <ParticipantsPage />
+      <AccountsPage />
     </ApiProvider>,
   )
   await screen.findByRole('heading', { name: '참여자' })
@@ -134,12 +134,12 @@ function participant(overrides: Partial<ParticipantRecord> = {}): ParticipantRec
 function renderWithApi(api: MockAppApi) {
   return render(
     <ApiProvider api={api}>
-      <ParticipantsPage />
+      <AccountsPage />
     </ApiProvider>,
   )
 }
 
-describe('ParticipantsPage', () => {
+describe('AccountsPage', () => {
   it('says whose password was assigned', async () => {
     const api = new MockAppApi()
     await api.login({ ...mockCredentials.admin, remember: false })
@@ -239,7 +239,7 @@ describe('ParticipantsPage', () => {
   })
 
   it('lists participant code, username, status, and interview status', async () => {
-    await renderParticipantsPage()
+    await renderAccountsPage()
 
     const row = await screen.findByRole('row', { name: /P-001.*participant01/i })
     expect(within(row).getByText('활성')).toBeInTheDocument()
@@ -258,7 +258,7 @@ describe('ParticipantsPage', () => {
   })
 
   it('filters rows by code or username', async () => {
-    await renderParticipantsPage()
+    await renderAccountsPage()
     const user = userEvent.setup()
 
     await user.type(screen.getByRole('searchbox', { name: '참여자 검색' }), 'participant01')
@@ -270,7 +270,7 @@ describe('ParticipantsPage', () => {
   })
 
   it('creates an account with username, code, and assigned password', async () => {
-    await renderParticipantsPage()
+    await renderAccountsPage()
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: '계정 생성' }))
@@ -285,7 +285,7 @@ describe('ParticipantsPage', () => {
 
 
   it('shows an assigned password once after create or reset', async () => {
-    await renderParticipantsPage()
+    await renderAccountsPage()
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: '비밀번호 재설정' }))
@@ -297,13 +297,13 @@ describe('ParticipantsPage', () => {
   })
 
   it('does not offer public registration or forced-change controls', async () => {
-    await renderParticipantsPage()
+    await renderAccountsPage()
 
     expect(screen.queryByText(/회원가입|공개 등록|강제 변경/)).not.toBeInTheDocument()
   })
 
   it('normalizes whitespace and case before filtering participant rows', async () => {
-    await renderParticipantsPage()
+    await renderAccountsPage()
     const user = userEvent.setup()
 
     await user.type(screen.getByRole('searchbox', { name: '참여자 검색' }), '  p-001  ')
@@ -578,7 +578,7 @@ describe('ParticipantsPage', () => {
   })
 
   it('keeps desktop headers and mobile labels with wrapping participant values', async () => {
-    await renderParticipantsPage()
+    await renderAccountsPage()
     expect(screen.getByRole('columnheader', { name: '코드' })).toBeInTheDocument()
     const row = await screen.findByRole('row', { name: /P-001.*participant01/i })
     expect(within(row).getByText('코드:')).toBeInTheDocument()
@@ -587,5 +587,90 @@ describe('ParticipantsPage', () => {
     expect(within(row).getByText('인터뷰:')).toBeInTheDocument()
     expect(within(row).getByText('participant01')).toHaveClass('break-words', 'whitespace-normal')
   })
+})
 
+describe('granting roles', () => {
+  async function renderAsAdmin() {
+    const api = new MockAppApi()
+    await api.login({ username: 'admin', password: 'research123!', remember: false })
+    render(<ApiProvider api={api}><AccountsPage currentUserId="admin-001" /></ApiProvider>)
+    await screen.findByRole('heading', { name: '계정 관리' })
+    return api
+  }
+
+  it('lists reviewers and administrators with their roles, apart from the participants', async () => {
+    await renderAsAdmin()
+
+    const staff = await screen.findByRole('table', { name: '검토자·관리자 목록' })
+    expect(within(await within(staff).findByRole('row', { name: /admin/ })).getByText('관리자')).toBeInTheDocument()
+    expect(within(within(staff).getByRole('row', { name: /reviewer/ })).getByText('검토자')).toBeInTheDocument()
+    expect(within(staff).queryByText('participant01')).not.toBeInTheDocument()
+  })
+
+  it('creates a reviewer from the one dialog by choosing the role', async () => {
+    const api = await renderAsAdmin()
+    const createStaff = vi.spyOn(api, 'createStaff')
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: '계정 생성' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('radio', { name: '참가자' })).toBeChecked()
+    await user.click(within(dialog).getByRole('radio', { name: '검토자' }))
+    await user.type(within(dialog).getByLabelText('사용자 이름'), 'rv-kim')
+    await user.click(within(dialog).getByRole('button', { name: '생성' }))
+
+    expect(createStaff).toHaveBeenCalledWith({ username: 'rv-kim', role: 'reviewer' })
+    expect(await within(dialog).findByLabelText('할당된 비밀번호')).not.toBeEmptyDOMElement()
+    expect(within(dialog).getByText('검토자')).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: '닫기' }))
+    const staff = screen.getByRole('table', { name: '검토자·관리자 목록' })
+    expect(await within(staff).findByRole('row', { name: /rv-kim/ })).toBeInTheDocument()
+  })
+
+  it('changes a reviewer into an administrator after a confirmation', async () => {
+    const api = await renderAsAdmin()
+    const changeStaffRole = vi.spyOn(api, 'changeStaffRole')
+    const user = userEvent.setup()
+    const staff = await screen.findByRole('table', { name: '검토자·관리자 목록' })
+
+    await user.click(within(await within(staff).findByRole('row', { name: /reviewer/ })).getByRole('button', { name: 'reviewer 관리자로 변경' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('로그아웃')
+    await user.click(within(dialog).getByRole('button', { name: '변경' }))
+
+    expect(changeStaffRole).toHaveBeenCalledWith('reviewer-001', 'admin')
+    const row = await within(staff).findByRole('row', { name: /reviewer/ })
+    await waitFor(() => expect(within(row).getByText('관리자')).toBeInTheDocument())
+    expect(within(row).getByRole('button', { name: 'reviewer 검토자로 변경' })).toBeInTheDocument()
+  })
+
+  it('does not let an administrator change or disable their own account', async () => {
+    await renderAsAdmin()
+    const staff = await screen.findByRole('table', { name: '검토자·관리자 목록' })
+
+    const own = await within(staff).findByRole('row', { name: /admin/ })
+    expect(within(own).getByRole('button', { name: 'admin 검토자로 변경' })).toBeDisabled()
+    expect(within(own).getByRole('button', { name: 'admin 비활성화' })).toBeDisabled()
+    expect(within(own).getByText('본인')).toBeInTheDocument()
+  })
+
+  it('resets a reviewer password and disables the account', async () => {
+    const api = await renderAsAdmin()
+    const user = userEvent.setup()
+    const staff = await screen.findByRole('table', { name: '검토자·관리자 목록' })
+    const row = await within(staff).findByRole('row', { name: /reviewer/ })
+
+    await user.click(within(row).getByRole('button', { name: 'reviewer 비밀번호 재설정' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: '재설정' }))
+    expect(await within(dialog).findByLabelText('할당된 비밀번호')).toHaveTextContent('reset-reviewer-password')
+    await user.click(within(dialog).getByRole('button', { name: '닫기' }))
+
+    const disableStaff = vi.spyOn(api, 'disableStaff')
+    await user.click(within(row).getByRole('button', { name: 'reviewer 비활성화' }))
+    expect(disableStaff).toHaveBeenCalledWith('reviewer-001')
+    await waitFor(() => expect(within(row).getByText('비활성')).toBeInTheDocument())
+    expect(within(row).getByRole('button', { name: 'reviewer 활성화' })).toBeInTheDocument()
+  })
 })

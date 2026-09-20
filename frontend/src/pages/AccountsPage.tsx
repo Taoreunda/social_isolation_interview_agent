@@ -22,7 +22,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ParticipantDialog } from '@/features/admin/ParticipantDialog'
+import { AccountDialog } from '@/features/admin/AccountDialog'
+import { StaffSection } from '@/features/admin/StaffSection'
 
 type DialogState =
   | { mode: 'create' }
@@ -63,8 +64,9 @@ function AccountStatus({ participant }: { participant: ParticipantRecord }) {
   </span>
 }
 
-export function ParticipantsPage() {
+export function AccountsPage({ currentUserId }: { currentUserId?: string }) {
   const api = useApi()
+  const [staffReloadKey, setStaffReloadKey] = useState(0)
   const [participants, setParticipants] = useState<ParticipantRecord[]>([])
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string[]>([])
@@ -248,7 +250,15 @@ export function ParticipantsPage() {
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">참여자</h1>
+        <h1 className="text-xl font-semibold">계정 관리</h1>
+        <Button className="ml-auto min-h-11 sm:min-h-9" onClick={() => setDialog({ mode: 'create' })} type="button">
+          <UserPlus aria-hidden="true" />
+          계정 생성
+        </Button>
+      </div>
+
+      <div className="mt-8 flex flex-wrap items-center gap-3">
+        <h2 className="text-lg font-semibold">참여자</h2>
         <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
           <Search aria-hidden="true" className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground" />
           <Input
@@ -270,10 +280,6 @@ export function ParticipantsPage() {
         >
           <Download aria-hidden="true" />
           {selected.length ? `선택 ${selected.length}명 CSV 다운로드` : '전체 CSV 다운로드'}
-        </Button>
-        <Button className="min-h-11 sm:min-h-9" onClick={() => setDialog({ mode: 'create' })} type="button">
-          <UserPlus aria-hidden="true" />
-          계정 생성
         </Button>
       </div>
 
@@ -370,14 +376,17 @@ export function ParticipantsPage() {
       )}
 
       {dialog && (
-        <ParticipantDialog
+        <AccountDialog
           mode={dialog.mode}
           onOpenChange={(open) => !open && setDialog(null)}
           onParticipantCreated={updateParticipant}
+          onStaffCreated={() => setStaffReloadKey((key) => key + 1)}
           open
           participant={dialog.mode === 'reset' ? dialog.participant : undefined}
         />
       )}
+
+      <StaffSection currentUserId={currentUserId} reloadKey={staffReloadKey} />
 
       <Dialog onOpenChange={(open) => !open && closeDisableDialog()} open={Boolean(participantToDisable)}>
         <DialogContent>

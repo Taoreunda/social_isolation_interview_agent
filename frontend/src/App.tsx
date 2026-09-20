@@ -11,7 +11,7 @@ import { InterviewPage } from '@/pages/InterviewPage'
 import { InterviewReviewPage } from '@/pages/InterviewReviewPage'
 import { InterviewTranscriptPage } from '@/pages/InterviewTranscriptPage'
 import { LoginPage } from '@/pages/LoginPage'
-import { ParticipantsPage } from '@/pages/ParticipantsPage'
+import { AccountsPage } from '@/pages/AccountsPage'
 import { PasswordPage } from '@/pages/PasswordPage'
 
 const defaultApi = createDefaultApi()
@@ -20,6 +20,12 @@ function InterviewRoute() {
   const { user } = useSession()
   const [searchParams] = useSearchParams()
   return <InterviewPage adminTools={user?.role === 'admin'} debug={searchParams.get('debug') === '1'} />
+}
+
+// The accounts screen protects the signed-in administrator's own row.
+function AccountsRoute() {
+  const { user } = useSession()
+  return <AccountsPage currentUserId={user?.id} />
 }
 
 // Archiving an interview is an administrator's call; a reviewer reviews.
@@ -50,7 +56,7 @@ export function AppRoutes() {
           <Route path="/admin/interviews/:interviewId/transcript" element={<InterviewTranscriptPage />} />
         </Route>
         <Route element={<RequireRole role="admin"><Outlet /></RequireRole>}>
-          <Route path="/admin/accounts" element={<ParticipantsPage />} />
+          <Route path="/admin/accounts" element={<AccountsRoute />} />
         </Route>
       </Route>
       <Route path="*" element={<DefaultRoute />} />
