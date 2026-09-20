@@ -2,7 +2,8 @@ import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const allowed = new Set(['#17233C', '#F6F4EE', '#2F6F68'])
+// Three base colours, plus the two signal colours of the debug panel's true/false lamps.
+const allowed = new Set(['#17233C', '#F6F4EE', '#2F6F68', '#2E8B57', '#C2413A'])
 const forbiddenFunction = /\b(?:rgb|rgba|hsl|hsla|oklch|lab|lch)\s*\(/gi
 const gradient = /\bgradient\b/gi
 const hex = /#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{4}|[\da-f]{3})\b/gi

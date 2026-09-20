@@ -5,6 +5,9 @@
   --ink: #17233C;
   --surface: #F6F4EE;
   --accent: #2F6F68;
+  /* True/false lamps in the administrator debug panel. Not for general use. */
+  --signal-true: #2E8B57;
+  --signal-false: #C2413A;
   --line: color-mix(in srgb, var(--ink) 16%, transparent);
   --muted: color-mix(in srgb, var(--ink) 7%, var(--surface));
   --hover: color-mix(in srgb, var(--accent) 12%, var(--surface));
@@ -32,6 +35,8 @@
   --color-input: var(--line);
   --color-ring: var(--accent);
   --color-destructive: var(--ink);
+  --color-signal-true: var(--signal-true);
+  --color-signal-false: var(--signal-false);
 }
 
 * {

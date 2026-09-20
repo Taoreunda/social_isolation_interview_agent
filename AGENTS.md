@@ -38,7 +38,7 @@ Keep the fixed authentication policy in `docs/architecture.md`: normal sessions 
 
 Use Python type hints and PEP 8 naming. Keep transaction ownership in services and SQL in repositories. Model calls must occur outside open database transactions. Inject the engine, clock, storage boundary, or password/token services in tests rather than calling external systems.
 
-React components use PascalCase and functions use camelCase. Keep the three base colors in `frontend/src/styles.css`: `#17233C`, `#F6F4EE`, `#2F6F68`. Derived colors may use opacity or `color-mix()`. Do not add gradients, decorative cards, emoji, promotional copy, or explanatory clutter. Preserve keyboard access, visible focus, Korean multiline layout, reduced motion, 360 px layouts, and non-color status labels.
+React components use PascalCase and functions use camelCase. Keep the three base colors in `frontend/src/styles.css`: `#17233C`, `#F6F4EE`, `#2F6F68`. Two signal colors, `#2E8B57` (true) and `#C2413A` (false), exist only for the true/false lamps of the administrator debug panel; do not use them elsewhere. Derived colors may use opacity or `color-mix()`. Do not add gradients, decorative cards, emoji, promotional copy, or explanatory clutter. Preserve keyboard access, visible focus, Korean multiline layout, reduced motion, 360 px layouts, and non-color status labels.
 
 Run from the repository root:
 
