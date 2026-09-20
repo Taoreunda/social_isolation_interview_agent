@@ -10,8 +10,7 @@ import { ApiError } from './api-error'
 import type { AppApi, CurrentUser, InterviewListItem, LoginInput, ParticipantInterview } from './contracts'
 import { MockAppApi } from '../mocks/mock-api'
 import { createMockFixtureState } from '../mocks/fixtures'
-import { AdminLayout } from '../layouts/AdminLayout'
-import { ParticipantLayout } from '../layouts/ParticipantLayout'
+import { AppLayout } from '../layouts/AppLayout'
 import { RequireGuest, RequireRole } from './route-guards'
 import { SessionProvider, useSession } from './session-context'
 
@@ -161,10 +160,10 @@ function renderRoutes(api: AppApi, entry: string) {
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route path="/login" element={<RequireGuest><p>Login</p></RequireGuest>} />
-            <Route element={<RequireRole role="participant"><ParticipantLayout /></RequireRole>}>
+            <Route element={<RequireRole role="participant"><AppLayout /></RequireRole>}>
               <Route path="/interview" element={<p>Interview</p>} />
             </Route>
-            <Route element={<RequireRole role="admin"><AdminLayout /></RequireRole>}>
+            <Route element={<RequireRole role="admin"><AppLayout /></RequireRole>}>
               <Route path="/admin" element={<p>Admin</p>} />
             </Route>
             <Route path="*" element={<Navigate to="/login" replace />} />
@@ -356,17 +355,35 @@ describe('complete application route tree', () => {
 
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument()
     expect(screen.getByTestId('location-path')).toHaveTextContent(entry)
-    expect(screen.getByRole('navigation', { name: '참여자 탐색' })).toBeInTheDocument()
   })
 
-  it('sends the old administrator interview address to the shared screen', async () => {
+  it.each(['/admin', '/admin/participants', '/interview', '/account/password'])(
+    'shows an administrator the same tabs in the same order on %s',
+    async (entry) => {
+      const api = new MockAppApi()
+      await api.login({ username: 'admin', password: 'research123!', remember: false })
+
+      renderCompleteRoutes(api, entry)
+
+      const navigation = await screen.findByRole('navigation', { name: '관리자 탐색' })
+      expect(within(navigation).getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+        ['검토', '/admin'],
+        ['참여자', '/admin/participants'],
+        ['인터뷰 해보기', '/interview'],
+        ['계정', '/account/password'],
+      ])
+      expect(screen.queryByRole('navigation', { name: '참여자 탐색' })).not.toBeInTheDocument()
+    },
+  )
+
+  it('offers the debugging switch only on the interview screen', async () => {
     const api = new MockAppApi()
     await api.login({ username: 'admin', password: 'research123!', remember: false })
 
-    renderCompleteRoutes(api, '/admin/interview')
+    renderCompleteRoutes(api, '/admin')
 
-    expect(await screen.findByRole('heading', { name: '인터뷰' })).toBeInTheDocument()
-    expect(screen.getByTestId('location-path')).toHaveTextContent('/interview')
+    await screen.findByRole('navigation', { name: '관리자 탐색' })
+    expect(screen.queryByRole('button', { name: '디버깅' })).not.toBeInTheDocument()
   })
 
   it('gives only an administrator a way back to review and a debugging switch in the header', async () => {
@@ -375,7 +392,7 @@ describe('complete application route tree', () => {
     const user = userEvent.setup()
 
     renderCompleteRoutes(api, '/interview')
-    const navigation = await screen.findByRole('navigation', { name: '참여자 탐색' })
+    const navigation = await screen.findByRole('navigation', { name: '관리자 탐색' })
     expect(within(navigation).getByRole('link', { name: '검토' })).toHaveAttribute('href', '/admin')
     const toggle = screen.getByRole('button', { name: '디버깅' })
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
@@ -401,7 +418,7 @@ describe('complete application route tree', () => {
 
     expect(await screen.findByRole('heading', { name: '인터뷰 진행 중' })).toBeInTheDocument()
     const navigation = screen.getByRole('navigation', { name: '참여자 탐색' })
-    expect(within(navigation).queryByRole('link', { name: '검토' })).not.toBeInTheDocument()
+    expect(within(navigation).getAllByRole('link').map((link) => link.textContent)).toEqual(['인터뷰', '계정'])
     expect(screen.queryByRole('button', { name: '디버깅' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '처음부터 다시' })).not.toBeInTheDocument()
   })
@@ -593,7 +610,7 @@ describe('role-protected routes', () => {
         <SessionProvider>
           <MemoryRouter initialEntries={['/interview']}>
             <Routes>
-              <Route element={<RequireRole role="participant"><ParticipantLayout /></RequireRole>}>
+              <Route element={<RequireRole role="participant"><AppLayout /></RequireRole>}>
                 <Route path="/interview" element={<p>Interview</p>} />
               </Route>
               <Route path="/login" element={<p>Login</p>} />
@@ -653,7 +670,6 @@ describe('role-protected routes', () => {
   ])('announces a password change once in the $role layout', async ({ entry, user: currentUser, role }) => {
     const api = new DeferredAppApi()
     const next = role === 'admin' ? '/admin/next' : '/interview/next'
-    const Layout = role === 'admin' ? AdminLayout : ParticipantLayout
 
     render(
       <ApiProvider api={api}>
@@ -663,7 +679,7 @@ describe('role-protected routes', () => {
             state: { announcement: '변경했습니다', returnTo: 'kept' },
           }]}>
             <Routes>
-              <Route element={<Layout />}>
+              <Route element={<AppLayout />}>
                 <Route path={entry} element={<><NavLink to={next}>next</NavLink><ReturnState /></>} />
                 <Route path={next} element={<p>next page</p>} />
               </Route>

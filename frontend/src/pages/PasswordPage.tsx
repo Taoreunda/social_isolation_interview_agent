@@ -1,15 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import type { Role } from '@/app/contracts'
+import { homeFor } from '@/app/home'
 import { useSession } from '@/app/session-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-
-function homeFor(role: Role | undefined): string {
-  return role === 'admin' ? '/admin' : '/interview'
-}
 
 export function PasswordPage() {
   const { changePassword, user } = useSession()

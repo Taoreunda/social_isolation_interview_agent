@@ -6,11 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useSession } from '@/app/session-context'
-import type { Role } from '@/app/contracts'
-
-function homeFor(role: Role): string {
-  return role === 'admin' ? '/admin' : '/interview'
-}
+import { homeFor } from '@/app/home'
 
 export function LoginPage() {
   const { announcement: sessionAnnouncement, login } = useSession()

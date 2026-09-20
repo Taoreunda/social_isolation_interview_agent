@@ -2,11 +2,8 @@ import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 
 import type { Role } from './contracts'
+import { homeFor } from './home'
 import { useSession } from './session-context'
-
-function homeFor(role: Role): string {
-  return role === 'admin' ? '/admin' : '/interview'
-}
 
 export function RequireGuest({ children }: { children: ReactNode }) {
   const { user } = useSession()
