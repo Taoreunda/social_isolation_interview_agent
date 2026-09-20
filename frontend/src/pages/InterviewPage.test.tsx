@@ -631,45 +631,68 @@ describe('debug mode', () => {
   })
 })
 
-describe('opening reveal', () => {
+describe('text streaming', () => {
   const opening: ParticipantInterview = {
     ...interview,
     progress: 0,
     messages: [
       { id: 'w1', role: 'assistant', content: '안녕하세요, 반갑습니다.', createdAt: '2026-08-25T09:00:00.000Z' },
-      { id: 'w2', role: 'assistant', content: '열 가지 남짓 여쭤볼 거예요.', createdAt: '2026-08-25T09:00:00.000Z' },
+      { id: 'w2', role: 'assistant', content: '보기에서 고르시면 됩니다.', createdAt: '2026-08-25T09:00:00.000Z' },
       { id: 'q1', role: 'assistant', content: '첫 질문입니다.', createdAt: '2026-08-25T09:00:00.000Z' },
     ],
   }
 
-  it('brings the opening in one bubble at a time after a fresh start, and holds the composer until the question is up', async () => {
+  it('types the opening out after a fresh start and holds the composer until it is done', async () => {
     const api = createApi({
       getCurrentInterview: vi.fn().mockRejectedValue(new ApiError(404, '없음')),
       startInterview: vi.fn().mockResolvedValue(structuredClone(opening)),
     })
     const user = userEvent.setup()
-    render(<ApiProvider api={api}><InterviewPage revealDelay={() => 150} /></ApiProvider>)
+    render(<ApiProvider api={api}><InterviewPage streamTick={40} /></ApiProvider>)
 
     await user.click(await screen.findByRole('button', { name: '인터뷰 시작' }))
 
-    expect(await screen.findByText('안녕하세요, 반갑습니다.')).toBeInTheDocument()
+    const first = (await screen.findAllByLabelText('인터뷰 진행자 메시지'))[0]
+    expect(first.textContent!.length).toBeGreaterThan(0)
+    expect(first.textContent!.length).toBeLessThan('안녕하세요, 반갑습니다.'.length)
     expect(screen.queryByText('첫 질문입니다.')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('진행자가 입력하는 중')).toBeInTheDocument()
     expect(screen.getByLabelText('답변 입력')).toBeDisabled()
 
-    expect(await screen.findByText('첫 질문입니다.', {}, { timeout: 3000 })).toBeInTheDocument()
-    expect(screen.getByText('열 가지 남짓 여쭤볼 거예요.')).toBeInTheDocument()
-    await waitFor(() => expect(screen.queryByLabelText('진행자가 입력하는 중')).not.toBeInTheDocument())
-    expect(screen.getByLabelText('답변 입력')).toBeEnabled()
+    expect(await screen.findByText('첫 질문입니다.', {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.getByText('안녕하세요, 반갑습니다.')).toBeInTheDocument()
+    expect(screen.getByText('보기에서 고르시면 됩니다.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('답변 입력')).toBeEnabled())
+  })
+
+  it('types out the next question after a turn, while the participant’s own message stays whole', async () => {
+    const afterTurn: ParticipantInterview = {
+      ...interview,
+      messages: [
+        ...interview.messages,
+        { id: 'u1', role: 'user', content: '제 답변입니다', createdAt: '2026-08-25T09:01:00.000Z' },
+        { id: 'q2', role: 'assistant', content: '다음 질문을 드리겠습니다.', createdAt: '2026-08-25T09:01:00.000Z' },
+      ],
+    }
+    const api = createApi({ sendMessage: vi.fn().mockResolvedValue(afterTurn) })
+    const user = userEvent.setup()
+    render(<ApiProvider api={api}><InterviewPage streamTick={40} /></ApiProvider>)
+    await user.type(await screen.findByLabelText('답변 입력'), '제 답변입니다')
+    await user.click(screen.getByRole('button', { name: '답변 전송' }))
+
+    await waitFor(() => expect(screen.getAllByLabelText('인터뷰 진행자 메시지')).toHaveLength(2))
+    expect(screen.getByText('제 답변입니다')).toBeInTheDocument()
+    expect(screen.queryByText('다음 질문을 드리겠습니다.')).not.toBeInTheDocument()
+
+    expect(await screen.findByText('다음 질문을 드리겠습니다.', {}, { timeout: 5000 })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText('답변 입력')).toBeEnabled())
   })
 
   it('shows an interview that is being resumed all at once', async () => {
     const api = createApi({ getCurrentInterview: vi.fn().mockResolvedValue(structuredClone(opening)) })
-    render(<ApiProvider api={api}><InterviewPage revealDelay={() => 150} /></ApiProvider>)
+    render(<ApiProvider api={api}><InterviewPage streamTick={40} /></ApiProvider>)
 
     expect(await screen.findByText('첫 질문입니다.')).toBeInTheDocument()
     expect(screen.getByText('안녕하세요, 반갑습니다.')).toBeInTheDocument()
-    expect(screen.queryByLabelText('진행자가 입력하는 중')).not.toBeInTheDocument()
     expect(screen.getByLabelText('답변 입력')).toBeEnabled()
   })
 })

@@ -70,7 +70,8 @@ export function Chat({
   useEffect(() => {
     const node = conversation.current
     if (node) node.scrollTop = node.scrollHeight
-  }, [messages.length, pendingMessage, isSending, typing])
+    // The last message grows while it is being typed out; keep it in view as it wraps.
+  }, [messages.length, messages[messages.length - 1]?.content.length, pendingMessage, isSending, typing])
 
   return (
     <>
@@ -102,18 +103,6 @@ export function Chat({
           ))}
           {pendingMessage !== null && <li aria-label="참여자 메시지" className="flex justify-end">
             <p className={bubbleClass('user')}>{pendingMessage}</p>
-          </li>}
-          {typing && <li className="flex justify-start">
-            <p aria-label="진행자가 입력하는 중" className={`${bubbleClass('assistant')} inline-flex items-center gap-1`} role="status">
-              {[0, 1, 2].map((dot) => (
-                <span
-                  aria-hidden="true"
-                  className="size-1.5 animate-pulse rounded-full bg-foreground/50 motion-reduce:animate-none"
-                  key={dot}
-                  style={{ animationDelay: `${dot * 200}ms` }}
-                />
-              ))}
-            </p>
           </li>}
           {isSending && <li className="flex justify-start">
             <p className={`${bubbleClass('assistant')} text-muted-foreground`} role="status">답변을 생성하는 중</p>

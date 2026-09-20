@@ -29,9 +29,15 @@ function phaseFor(interview: ParticipantInterview): InterviewPhase {
   return interview.status === 'completed' ? 'completed' : 'active'
 }
 
-// A bubble takes about as long to arrive as it takes to read the one before it.
-function defaultRevealDelay(text: string): number {
-  return Math.min(1600, Math.max(600, 400 + text.length * 22))
+// The server answers a turn in one piece; the screen types it out so the
+// interviewer's words arrive at reading pace instead of landing all at once.
+const STREAM_TICK_MS = 28
+const STREAM_CHARS_PER_TICK = 2
+const STREAM_PAUSE_TICKS = 9
+
+interface StreamCursor {
+  index: number
+  chars: number
 }
 
 function prefersReducedMotion(): boolean {
@@ -43,10 +49,10 @@ function prefersReducedMotion(): boolean {
 interface InterviewPageProps {
   adminTools?: boolean
   debug?: boolean
-  revealDelay?: (text: string) => number
+  streamTick?: number
 }
 
-export function InterviewPage({ adminTools = false, debug = false, revealDelay = defaultRevealDelay }: InterviewPageProps) {
+export function InterviewPage({ adminTools = false, debug = false, streamTick = STREAM_TICK_MS }: InterviewPageProps) {
   const api = useApi()
   const [answer, setAnswer] = useState('')
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
@@ -59,8 +65,9 @@ export function InterviewPage({ adminTools = false, debug = false, revealDelay =
   const [trace, setTrace] = useState<InterviewDetail | null>(null)
   const [traceError, setTraceError] = useState<string | null>(null)
   const traceRequest = useRef(0)
-  // While a fresh interview opens, only this many messages are on screen; null shows them all.
-  const [revealed, setRevealed] = useState<number | null>(null)
+  // While the interviewer's new words are being typed out: the message being
+  // typed and how much of it is on screen. null shows every message whole.
+  const [stream, setStream] = useState<StreamCursor | null>(null)
   const mounted = useRef(false)
   const requestGeneration = useRef(0)
   const inFlight = useRef(false)
@@ -114,7 +121,7 @@ export function InterviewPage({ adminTools = false, debug = false, revealDelay =
       setAnswer('')
       setPendingMessage(null)
       pendingTurn.current = null
-      adopt(detail, { opening: true })
+      adopt(detail, { streamFrom: 0 })
     } catch {
       if (!mounted.current || operation !== requestGeneration.current) return
       setPhase('start_error')
@@ -138,25 +145,41 @@ export function InterviewPage({ adminTools = false, debug = false, revealDelay =
     }
   }
 
-  function adopt(detail: ParticipantInterview, options: { opening?: boolean } = {}): void {
+  // streamFrom is the first message that is new to this screen; everything
+  // before it is already known to the participant and appears whole.
+  function adopt(detail: ParticipantInterview, options: { streamFrom?: number } = {}): void {
     setInterview(detail)
     setPhase(phaseFor(detail))
-    setRevealed(options.opening && detail.messages.length > 1 && !prefersReducedMotion() ? 1 : null)
+    const from = options.streamFrom
+    const streams = from !== undefined && from < detail.messages.length && !prefersReducedMotion()
+    setStream(streams ? { index: from, chars: 0 } : null)
     if (adminTools && debug) void refreshTrace(detail.id)
   }
 
   useEffect(() => {
-    if (revealed === null || !interview) return
-    if (revealed >= interview.messages.length) {
-      setRevealed(null)
+    if (!stream || !interview) return
+    const message = interview.messages[stream.index]
+    if (!message) {
+      setStream(null)
       return
     }
+    // The participant's own words are never typed out.
+    if (message.role !== 'assistant') {
+      setStream({ index: stream.index + 1, chars: 0 })
+      return
+    }
+    const finished = stream.chars >= message.content.length
     const timer = setTimeout(
-      () => setRevealed((count) => (count === null ? null : count + 1)),
-      revealDelay(interview.messages[revealed].content),
+      () => setStream((cursor) => {
+        if (!cursor) return null
+        return finished
+          ? { index: cursor.index + 1, chars: 0 }
+          : { ...cursor, chars: cursor.chars + STREAM_CHARS_PER_TICK }
+      }),
+      finished ? streamTick * STREAM_PAUSE_TICKS : streamTick,
     )
     return () => clearTimeout(timer)
-  }, [revealed, interview, revealDelay])
+  }, [stream, interview, streamTick])
 
   async function restartInterview(): Promise<void> {
     if (!interview || inFlight.current) return
@@ -173,7 +196,7 @@ export function InterviewPage({ adminTools = false, debug = false, revealDelay =
       setAnswer('')
       setPendingMessage(null)
       pendingTurn.current = null
-      adopt(detail, { opening: true })
+      adopt(detail, { streamFrom: 0 })
       setConfirmingRestart(false)
     } catch {
       if (!mounted.current || operation !== requestGeneration.current) return
@@ -224,7 +247,8 @@ export function InterviewPage({ adminTools = false, debug = false, revealDelay =
       if (!mounted.current || operation !== requestGeneration.current) return
       pendingTurn.current = null
       setPendingMessage(null)
-      adopt(detail)
+      // Skip the participant's own message; type out what the interviewer says next.
+      adopt(detail, { streamFrom: interview.messages.length + 1 })
     } catch {
       if (!mounted.current || operation !== requestGeneration.current) return
       setPhase('send_error')
@@ -348,6 +372,14 @@ export function InterviewPage({ adminTools = false, debug = false, revealDelay =
   }
 
   const retrying = phase === 'send_error'
+  const visibleMessages = stream === null
+    ? interview.messages
+    : [
+        ...interview.messages.slice(0, stream.index),
+        ...(stream.chars > 0 && interview.messages[stream.index]
+          ? [{ ...interview.messages[stream.index], content: interview.messages[stream.index].content.slice(0, stream.chars) }]
+          : []),
+      ]
   return (
     <main className={mainClass}>
       <div className={chatColumnClass} data-chat-column="">
@@ -356,8 +388,8 @@ export function InterviewPage({ adminTools = false, debug = false, revealDelay =
         title={<h1 className="shrink-0 text-sm font-semibold">인터뷰 진행 중</h1>}
         answer={answer}
         isSending={phase === 'sending'}
-        messages={revealed === null ? interview.messages : interview.messages.slice(0, revealed)}
-        typing={revealed !== null}
+        messages={visibleMessages}
+        typing={stream !== null}
         onAnswerChange={setAnswer}
         onSubmit={submitAnswer}
         onSuggestion={pickSuggestion}
