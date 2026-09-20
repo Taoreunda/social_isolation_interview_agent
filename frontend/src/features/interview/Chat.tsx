@@ -120,18 +120,17 @@ export function Chat({
       </div>
       {offerSuggestions && <div
         aria-label="추천 답변"
-        className="border-t border-border pt-3"
+        className="pt-2"
         // A new key for every turn replays the entrance, even when two questions share a set.
         key={`${messages.length}:${suggestions.map((reply) => reply.text).join('|')}`}
         role="group"
       >
-        <p className="text-right text-xs text-muted-foreground">아래에서 고르거나 직접 입력하세요</p>
-        {/* They sit on the participant's side and share the shape of the participant's
-            bubble: replies not yet sent. Sentences stack; short values wrap on a row. */}
+        {/* They sit on the left, under the question they answer. Sentences stack;
+            short values wrap on a row. The hint to pick one lives in the composer. */}
         <div
           className={suggestions.some((reply) => reply.text.length > LONG_REPLY)
-            ? 'mt-2 flex flex-col items-end gap-2'
-            : 'mt-2 flex flex-wrap justify-end gap-2'}
+            ? 'flex flex-col items-start gap-2'
+            : 'flex flex-wrap justify-start gap-2'}
           data-testid="reply-list"
         >
           {suggestions.map((reply, index) => (
@@ -152,7 +151,7 @@ export function Chat({
           ))}
         </div>
       </div>}
-      {showComposer && <form className={`flex min-w-0 items-end gap-2 pt-3 ${offerSuggestions ? '' : 'border-t border-border'}`} onSubmit={onSubmit}>
+      {showComposer && <form className="flex min-w-0 items-end gap-2 pt-3" onSubmit={onSubmit}>
         <div className="min-w-0 flex-1">
           <label className="sr-only" htmlFor="interview-answer">답변 입력</label>
           <Textarea
@@ -161,7 +160,7 @@ export function Chat({
             id="interview-answer"
             onChange={(event) => onAnswerChange(event.target.value)}
             onKeyDown={submitOnEnter}
-            placeholder="답변 입력"
+            placeholder={offerSuggestions ? '위에서 고르거나 직접 입력하세요' : '답변 입력'}
             rows={2}
             value={answer}
           />

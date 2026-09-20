@@ -714,7 +714,9 @@ describe('suggested replies', () => {
     expect(group.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(within(group).getAllByRole('button').map((button) => button.textContent)).toEqual(['예', '아니요'])
 
-    expect(within(group).getByText('아래에서 고르거나 직접 입력하세요')).toBeInTheDocument()
+    // The hint lives in the composer, which the replies sit above.
+    expect(screen.getByLabelText('답변 입력')).toHaveAttribute('placeholder', '위에서 고르거나 직접 입력하세요')
+    expect(within(group).queryByText(/고르거나/)).not.toBeInTheDocument()
 
     await user.click(within(group).getByRole('button', { name: '예' }))
 
@@ -735,7 +737,7 @@ describe('suggested replies', () => {
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('interview-001', expect.any(String), '예'))
   })
 
-  it('lays the replies out on the participant’s side, like bubbles not yet sent', async () => {
+  it('lays sentence replies out on the left, under the question they answer', async () => {
     const api = createApi({
       getCurrentInterview: vi.fn().mockResolvedValue(withReplies([
         { text: '예, 대부분 집이나 방에서 보냈어요', send: true },
@@ -746,20 +748,21 @@ describe('suggested replies', () => {
 
     const group = await screen.findByRole('group', { name: '추천 답변' })
     const list = within(group).getByTestId('reply-list')
-    expect(list).toHaveClass('flex-col', 'items-end')
+    expect(list).toHaveClass('flex-col', 'items-start')
+    expect(list).not.toHaveClass('items-end')
     const reply = within(group).getByRole('button', { name: /^예, 대부분/ })
     expect(reply).toHaveClass('border-primary', 'text-primary', 'text-left')
   })
 
-  it('keeps short replies on one wrapping row, still on the participant’s side', async () => {
+  it('keeps short replies on one wrapping row, also on the left', async () => {
     const api = createApi({
       getCurrentInterview: vi.fn().mockResolvedValue(withReplies([{ text: '0명', send: true }, { text: '1명', send: true }])),
     })
     renderInterview(api)
 
     const list = within(await screen.findByRole('group', { name: '추천 답변' })).getByTestId('reply-list')
-    expect(list).toHaveClass('flex-wrap', 'justify-end')
-    expect(list).not.toHaveClass('flex-col')
+    expect(list).toHaveClass('flex-wrap', 'justify-start')
+    expect(list).not.toHaveClass('flex-col', 'justify-end')
   })
 
   it('puts a reply that needs more into the composer instead of sending it', async () => {
@@ -799,6 +802,23 @@ describe('suggested replies', () => {
       expect(reply).toHaveClass('animate-in', 'fade-in', 'slide-in-from-bottom-2', 'motion-reduce:animate-none')
     }
     expect(Number.parseInt(second.style.animationDelay, 10)).toBeGreaterThan(Number.parseInt(first.style.animationDelay, 10))
+  })
+
+  it('draws no rule between the conversation and the replies or the composer', async () => {
+    const api = createApi({ getCurrentInterview: vi.fn().mockResolvedValue(withReplies([{ text: '예', send: true }])) })
+    renderInterview(api)
+
+    const group = await screen.findByRole('group', { name: '추천 답변' })
+    const form = screen.getByLabelText('답변 입력').closest('form')!
+    expect(group).not.toHaveClass('border-t')
+    expect(form).not.toHaveClass('border-t')
+  })
+
+  it('asks plainly for an answer when there is nothing to pick from', async () => {
+    renderInterview(createApi())
+
+    expect(await screen.findByLabelText('답변 입력')).toHaveAttribute('placeholder', '답변 입력')
+    expect(screen.getByLabelText('답변 입력').closest('form')).not.toHaveClass('border-t')
   })
 
   it('steps aside while a turn is in flight and when there is nothing to suggest', async () => {
