@@ -120,12 +120,19 @@ export function Chat({
           </li>}
         </ol>
       </div>
-      {offerSuggestions && <div aria-label="추천 답변" className="flex flex-wrap gap-2 border-t border-border pt-3" role="group">
-        {suggestions.map((reply) => (
+      {offerSuggestions && <div
+        aria-label="추천 답변"
+        className="flex flex-wrap gap-2 border-t border-border pt-3"
+        // A new key for every turn replays the entrance, even when two questions share a set.
+        key={`${messages.length}:${suggestions.map((reply) => reply.text).join('|')}`}
+        role="group"
+      >
+        {suggestions.map((reply, index) => (
           <button
-            className="min-h-11 rounded-lg border border-primary bg-primary/10 px-4 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-9"
+            className="min-h-11 rounded-lg border border-primary bg-primary/10 px-4 text-sm font-medium text-primary transition-[color,background-color,transform] animate-in fade-in slide-in-from-bottom-2 zoom-in-95 fill-mode-both duration-300 hover:-translate-y-0.5 hover:bg-primary hover:text-primary-foreground active:translate-y-0 active:scale-95 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:animate-none motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:min-h-9"
             key={reply.text}
             onClick={() => onSuggestion?.(reply)}
+            style={{ animationDelay: `${150 + index * 70}ms` }}
             type="button"
           >
             {reply.text}

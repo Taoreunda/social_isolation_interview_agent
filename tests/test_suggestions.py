@@ -31,7 +31,8 @@ def interview_with(statuses: dict[str, str], *, status: str = "active") -> Simpl
 
 def test_every_question_has_replies_that_split_its_cut_off() -> None:
     assert texts("A1") == ["예", "아니요"]
-    assert texts("A2") == ["주 0회", "주 1회", "주 2회", "주 3회", "주 4회 이상"]
+    # Two replies that meet at the cut-off: three or fewer is True, four or more is False.
+    assert texts("A2") == ["주 3회 이하", "주 4회 이상"]
     assert texts("B1") == texts("C1") == ["0명", "1명", "2명", "3명 이상"]
     durations = ["1개월 미만", "1~3개월", "3~6개월", "6개월~1년", "1년 이상"]
     for question_id in ("A3", "B2", "C2", "D1_duration", "D2_duration"):

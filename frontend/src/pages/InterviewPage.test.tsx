@@ -719,6 +719,20 @@ describe('suggested replies', () => {
     expect(reply).not.toHaveClass('bg-muted')
   })
 
+  it('brings the replies in one after another so they read as things to tap, and stays still for reduced motion', async () => {
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockResolvedValue(withReplies([{ text: '예', send: true }, { text: '아니요', send: true }])),
+    })
+    renderInterview(api)
+
+    const group = await screen.findByRole('group', { name: '추천 답변' })
+    const [first, second] = within(group).getAllByRole('button')
+    for (const reply of [first, second]) {
+      expect(reply).toHaveClass('animate-in', 'fade-in', 'slide-in-from-bottom-2', 'motion-reduce:animate-none')
+    }
+    expect(Number.parseInt(second.style.animationDelay, 10)).toBeGreaterThan(Number.parseInt(first.style.animationDelay, 10))
+  })
+
   it('steps aside while a turn is in flight and when there is nothing to suggest', async () => {
     const pending = deferred<ParticipantInterview>()
     const api = createApi({

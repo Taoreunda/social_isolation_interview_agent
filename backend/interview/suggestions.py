@@ -27,7 +27,9 @@ def _replies(*texts: str) -> tuple[SuggestedReply, ...]:
 
 
 _YES_NO = _replies("예", "아니요")
-_TIMES_A_WEEK = _replies("주 0회", "주 1회", "주 2회", "주 3회", "주 4회 이상")
+# The cut-off is four outings a week, so the two replies meet there: "3회 이하"
+# rather than "3회 미만", which would leave exactly three without a reply.
+_TIMES_A_WEEK = _replies("주 3회 이하", "주 4회 이상")
 _PEOPLE = _replies("0명", "1명", "2명", "3명 이상")
 # A3 turns at six months and the other durations at three; these five steps split both.
 _DURATION = _replies("1개월 미만", "1~3개월", "3~6개월", "6개월~1년", "1년 이상")
