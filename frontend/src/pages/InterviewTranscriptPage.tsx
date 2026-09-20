@@ -94,6 +94,7 @@ export function InterviewTranscriptPage() {
         progress={detail.progress}
         retrying={false}
         showComposer={false}
+        showSources
       />
     </div>
   </main>

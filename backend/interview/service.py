@@ -15,6 +15,7 @@ from interview.engine import EngineTurnResult
 from interview.models import ExpertReview, Interview, InterviewMessage, ScorecardItem
 from interview.repository import InterviewRepository
 from interview.scorecard import Scorecard
+from interview.suggestions import open_question_id, was_offered
 from interview.welcome import WELCOME_MESSAGES
 from sqlalchemy.orm import Session
 
@@ -169,6 +170,7 @@ class InterviewService:
         interview_id: UUID,
         client_turn_id: UUID,
         content: str,
+        suggested: bool = False,
     ) -> Interview:
         lock_key = f"interview:{interview_id}"
         lock = _retain_lock(lock_key)
@@ -191,6 +193,8 @@ class InterviewService:
                     {"role": message.role, "content": message.content}
                     for message in interview.messages
                 ]
+                # A client may claim a tap; it only counts when that exact reply was on offer.
+                tapped = suggested and was_offered(open_question_id(interview), content)
                 scorecard = self._scorecard_dict(interview)
 
             result = await self._require_engine().run_persisted_turn(
@@ -222,6 +226,7 @@ class InterviewService:
                     sequence=next_sequence,
                     role="user",
                     content=content,
+                    source="suggested" if tapped else "typed",
                     client_turn_id=client_turn_id,
                     created_at=now,
                 )
@@ -360,6 +365,7 @@ class InterviewService:
         "questionId",
         "question",
         "answer",
+        "answerSource",
         "value",
         "aiStatus",
         "expertStatus",
@@ -456,6 +462,7 @@ class InterviewService:
                         item.question_id,
                         item.question,
                         item.answer_message.content if item.answer_message else None,
+                        item.answer_message.source if item.answer_message else None,
                         item.value,
                         item.ai_status,
                         review.expert_status if review else None,

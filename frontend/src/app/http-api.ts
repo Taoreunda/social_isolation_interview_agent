@@ -147,11 +147,13 @@ export class HttpAppApi implements AppApi {
     interviewId: string,
     clientTurnId: string,
     content: string,
+    suggested = false,
   ): Promise<ParticipantInterview> {
     return this.requestJson<ParticipantInterview>(
       `${this.interviewPath(interviewId)}/messages`,
       this.withCsrf({
-        body: JSON.stringify({ clientTurnId, content }),
+        // The flag travels only when the answer was tapped from the suggested replies.
+        body: JSON.stringify(suggested ? { clientTurnId, content, suggested } : { clientTurnId, content }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       }),

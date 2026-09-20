@@ -120,6 +120,15 @@ describe('administrator interview review', () => {
     expect(within(row).getByText('응답에서 혼자 지내는 시간이 길다고 언급했습니다.')).toBeInTheDocument()
   })
 
+  it('tells the reviewer when an answer was tapped rather than typed', async () => {
+    const tapped = clone({ ...detail, scorecard: [{ ...detail.scorecard[0], answerSource: 'suggested' as const }] })
+    const api = createApi({ getInterview: vi.fn().mockResolvedValue(tapped) })
+    renderReview(api)
+
+    const row = (await screen.findByText('q1')).closest('tr')!
+    expect(within(row).getByText('보기에서 선택')).toBeInTheDocument()
+  })
+
   it('lays the answer and the AI decision out as separate columns', async () => {
     const api = createApi()
     renderReview(api)

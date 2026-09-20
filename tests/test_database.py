@@ -136,3 +136,13 @@ def test_migrations_create_auth_and_research_tables(
     finally:
         engine.dispose()
         reset_database_state()
+
+
+def test_messages_record_how_an_answer_was_given(postgres_engine) -> None:
+    inspector = inspect(postgres_engine)
+
+    columns = {column["name"]: column for column in inspector.get_columns("interview_messages")}
+    assert "source" in columns
+    assert columns["source"]["nullable"] is True, "interviewer messages have no source"
+    checks = {check["name"] for check in inspector.get_check_constraints("interview_messages")}
+    assert "ck_interview_messages_source" in checks

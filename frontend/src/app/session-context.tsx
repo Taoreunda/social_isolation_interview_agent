@@ -68,8 +68,10 @@ function withSessionErrors(api: AppApi, authorizedRequest: AuthorizedRequest): A
     ),
     getCurrentInterview: () => authorizedRequest(() => api.getCurrentInterview()),
     startInterview: () => authorizedRequest(() => api.startInterview()),
-    sendMessage: (interviewId, clientTurnId, content) => authorizedRequest(
-      () => api.sendMessage(interviewId, clientTurnId, content),
+    sendMessage: (interviewId, clientTurnId, content, suggested) => authorizedRequest(
+      () => (suggested
+        ? api.sendMessage(interviewId, clientTurnId, content, true)
+        : api.sendMessage(interviewId, clientTurnId, content)),
     ),
     listParticipants: () => authorizedRequest(() => api.listParticipants()),
     createParticipant: (input) => authorizedRequest(() => api.createParticipant(input)),

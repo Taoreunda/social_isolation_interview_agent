@@ -125,6 +125,9 @@ export function ScorecardReview({ interviewId, scorecard, onReview }: ScorecardR
           <TableCell className="block break-words whitespace-normal sm:table-cell">
             <MobileLabel>답변:</MobileLabel>
             {row.answer ?? (row.value ? null : <span className="text-muted-foreground">기록 없음</span>)}
+            {row.answer && row.answerSource === 'suggested' && (
+              <span className="ml-2 text-xs whitespace-nowrap text-muted-foreground">보기에서 선택</span>
+            )}
             {row.value && row.value !== row.answer && (
               <span className="mt-1 inline-block rounded-md border border-border px-2 py-0.5 text-sm text-muted-foreground">
                 {row.value}

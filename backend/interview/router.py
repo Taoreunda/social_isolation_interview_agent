@@ -148,6 +148,7 @@ async def submit_interview_message(
             interview_id=interview_id,
             client_turn_id=payload.client_turn_id,
             content=payload.content.strip(),
+            suggested=payload.suggested,
         )
     except (
         InterviewNotFound,

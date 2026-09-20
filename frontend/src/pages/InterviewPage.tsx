@@ -23,6 +23,8 @@ type InterviewPhase =
 interface PendingTurn {
   clientTurnId: string
   content: string
+  // True when the participant tapped a suggested reply; a retry keeps saying so.
+  suggested?: boolean
 }
 
 function phaseFor(interview: ParticipantInterview): InterviewPhase {
@@ -226,7 +228,7 @@ export function InterviewPage({ adminTools = false, debug = false, streamTick = 
   // A tapped reply is an answer like any other, unless it asks to be finished first.
   function pickSuggestion(reply: SuggestedReply): void {
     if (reply.send) {
-      if (!pendingTurn.current) void dispatchTurn({ clientTurnId: crypto.randomUUID(), content: reply.text })
+      if (!pendingTurn.current) void dispatchTurn({ clientTurnId: crypto.randomUUID(), content: reply.text, suggested: true })
       return
     }
     setAnswer(`${reply.text}. `)
@@ -243,7 +245,9 @@ export function InterviewPage({ adminTools = false, debug = false, streamTick = 
     setAnswer('')
     setPhase('sending')
     try {
-      const detail = await api.sendMessage(interview.id, turn.clientTurnId, turn.content)
+      const detail = turn.suggested
+        ? await api.sendMessage(interview.id, turn.clientTurnId, turn.content, true)
+        : await api.sendMessage(interview.id, turn.clientTurnId, turn.content)
       if (!mounted.current || operation !== requestGeneration.current) return
       pendingTurn.current = null
       setPendingMessage(null)

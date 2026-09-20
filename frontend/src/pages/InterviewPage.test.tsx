@@ -714,9 +714,52 @@ describe('suggested replies', () => {
     expect(group.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(within(group).getAllByRole('button').map((button) => button.textContent)).toEqual(['예', '아니요'])
 
+    expect(within(group).getByText('아래에서 고르거나 직접 입력하세요')).toBeInTheDocument()
+
     await user.click(within(group).getByRole('button', { name: '예' }))
 
+    // The fourth argument says the answer was tapped, not typed.
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('interview-001', expect.any(String), '예', true))
+  })
+
+  it('sends a typed answer without claiming it was tapped', async () => {
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockResolvedValue(withReplies([{ text: '예', send: true }])),
+    })
+    const user = userEvent.setup()
+    renderInterview(api)
+
+    await user.type(await screen.findByLabelText('답변 입력'), '예')
+    await user.click(screen.getByRole('button', { name: '답변 전송' }))
+
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('interview-001', expect.any(String), '예'))
+  })
+
+  it('lays the replies out on the participant’s side, like bubbles not yet sent', async () => {
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockResolvedValue(withReplies([
+        { text: '예, 대부분 집이나 방에서 보냈어요', send: true },
+        { text: '아니요, 밖에서 보낸 시간이 더 많았어요', send: true },
+      ])),
+    })
+    renderInterview(api)
+
+    const group = await screen.findByRole('group', { name: '추천 답변' })
+    const list = within(group).getByTestId('reply-list')
+    expect(list).toHaveClass('flex-col', 'items-end')
+    const reply = within(group).getByRole('button', { name: /^예, 대부분/ })
+    expect(reply).toHaveClass('border-primary', 'text-primary', 'text-left')
+  })
+
+  it('keeps short replies on one wrapping row, still on the participant’s side', async () => {
+    const api = createApi({
+      getCurrentInterview: vi.fn().mockResolvedValue(withReplies([{ text: '0명', send: true }, { text: '1명', send: true }])),
+    })
+    renderInterview(api)
+
+    const list = within(await screen.findByRole('group', { name: '추천 답변' })).getByTestId('reply-list')
+    expect(list).toHaveClass('flex-wrap', 'justify-end')
+    expect(list).not.toHaveClass('flex-col')
   })
 
   it('puts a reply that needs more into the composer instead of sending it', async () => {
@@ -726,7 +769,9 @@ describe('suggested replies', () => {
     const user = userEvent.setup()
     renderInterview(api)
 
-    await user.click(await screen.findByRole('button', { name: '있습니다' }))
+    const needsMore = await screen.findByRole('button', { name: /^있습니다/ })
+    expect(needsMore).toHaveTextContent('이어서 입력')
+    await user.click(needsMore)
 
     expect(api.sendMessage).not.toHaveBeenCalled()
     expect(screen.getByLabelText('답변 입력')).toHaveValue('있습니다. ')
@@ -738,7 +783,7 @@ describe('suggested replies', () => {
     renderInterview(api)
 
     const reply = await screen.findByRole('button', { name: '예' })
-    expect(reply).toHaveClass('border-primary', 'bg-primary/10', 'text-primary')
+    expect(reply).toHaveClass('border-primary', 'text-primary')
     expect(reply).not.toHaveClass('bg-muted')
   })
 

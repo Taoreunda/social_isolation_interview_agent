@@ -19,6 +19,8 @@ ReviewStatus = Literal["unreviewed", "in_review", "reviewed"]
 class InterviewMessageRequest(ApiSchema):
     client_turn_id: UUID
     content: str = Field(min_length=1, max_length=4000)
+    # True when the participant tapped a suggested reply rather than typing.
+    suggested: bool = False
 
     @model_validator(mode="after")
     def reject_blank_content(self) -> InterviewMessageRequest:
@@ -32,6 +34,7 @@ class InterviewMessageResponse(ApiSchema):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+    source: Literal["typed", "suggested"] | None = None
 
 
 class SuggestedReplyResponse(ApiSchema):
@@ -61,6 +64,7 @@ class ScorecardRowResponse(ApiSchema):
     question_id: str
     question: str
     answer: str | None
+    answer_source: Literal["typed", "suggested"] | None = None
     value: str | None
     rationale: str | None
     ai_status: ScoreDecision | None
@@ -101,6 +105,7 @@ def participant_response(interview: Interview) -> ParticipantInterviewResponse:
                 role=message.role,
                 content=message.content,
                 created_at=message.created_at,
+                source=message.source,
             )
             for message in interview.messages
         ],
@@ -143,6 +148,7 @@ def admin_detail_response(
                 role=message.role,
                 content=message.content,
                 created_at=message.created_at,
+                source=message.source,
             )
             for message in interview.messages
         ],
@@ -151,6 +157,7 @@ def admin_detail_response(
                 question_id=item.question_id,
                 question=item.question,
                 answer=item.answer_message.content if item.answer_message else None,
+                answer_source=item.answer_message.source if item.answer_message else None,
                 value=item.value,
                 rationale=item.rationale,
                 ai_status=item.ai_status,

@@ -125,6 +125,10 @@ class InterviewMessage(Base):
             "sequence >= 0",
             name="ck_interview_messages_sequence",
         ),
+        CheckConstraint(
+            "source IS NULL OR source IN ('typed', 'suggested')",
+            name="ck_interview_messages_source",
+        ),
         UniqueConstraint(
             "interview_id",
             "sequence",
@@ -154,6 +158,9 @@ class InterviewMessage(Base):
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # How a participant gave this answer: typed it, or tapped a suggested reply.
+    # Null for interviewer messages and for answers from before this was recorded.
+    source: Mapped[str | None] = mapped_column(String(16), nullable=True)
     client_turn_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )

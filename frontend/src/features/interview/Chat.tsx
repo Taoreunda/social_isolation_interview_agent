@@ -1,4 +1,4 @@
-import { Send } from 'lucide-react'
+import { PenLine, Send, SendHorizontal } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
 
@@ -19,10 +19,15 @@ interface ChatProps {
   progress: number
   retrying: boolean
   showComposer: boolean
+  // Reviewer views say which answers were tapped from the suggested replies.
+  showSources?: boolean
   suggestions?: SuggestedReply[]
   title?: ReactNode
   typing?: boolean
 }
+
+// Replies longer than this are sentences and read better stacked than wrapped.
+const LONG_REPLY = 8
 
 function roleName(role: InterviewMessage['role']): string {
   return role === 'assistant' ? '인터뷰 진행자' : '참여자'
@@ -59,6 +64,7 @@ export function Chat({
   progress,
   retrying,
   showComposer,
+  showSources = false,
   suggestions = [],
   title,
   typing = false,
@@ -93,12 +99,15 @@ export function Chat({
           {messages.map((message) => (
             <li
               aria-label={`${roleName(message.role)} 메시지`}
-              className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
+              className={message.role === 'user' ? 'flex flex-col items-end' : 'flex justify-start'}
               key={message.id}
             >
               <p className={bubbleClass(message.role)}>
                 {message.content}
               </p>
+              {showSources && message.source === 'suggested' && (
+                <span className="mt-1 text-xs text-muted-foreground">보기에서 선택</span>
+              )}
             </li>
           ))}
           {pendingMessage !== null && <li aria-label="참여자 메시지" className="flex justify-end">
@@ -111,22 +120,37 @@ export function Chat({
       </div>
       {offerSuggestions && <div
         aria-label="추천 답변"
-        className="flex flex-wrap gap-2 border-t border-border pt-3"
+        className="border-t border-border pt-3"
         // A new key for every turn replays the entrance, even when two questions share a set.
         key={`${messages.length}:${suggestions.map((reply) => reply.text).join('|')}`}
         role="group"
       >
-        {suggestions.map((reply, index) => (
-          <button
-            className="min-h-11 rounded-lg border border-primary bg-primary/10 px-4 text-sm font-medium text-primary transition-[color,background-color,transform] animate-in fade-in slide-in-from-bottom-2 zoom-in-95 fill-mode-both duration-300 hover:-translate-y-0.5 hover:bg-primary hover:text-primary-foreground active:translate-y-0 active:scale-95 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:animate-none motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:min-h-9"
-            key={reply.text}
-            onClick={() => onSuggestion?.(reply)}
-            style={{ animationDelay: `${150 + index * 70}ms` }}
-            type="button"
-          >
-            {reply.text}
-          </button>
-        ))}
+        <p className="text-right text-xs text-muted-foreground">아래에서 고르거나 직접 입력하세요</p>
+        {/* They sit on the participant's side and share the shape of the participant's
+            bubble: replies not yet sent. Sentences stack; short values wrap on a row. */}
+        <div
+          className={suggestions.some((reply) => reply.text.length > LONG_REPLY)
+            ? 'mt-2 flex flex-col items-end gap-2'
+            : 'mt-2 flex flex-wrap justify-end gap-2'}
+          data-testid="reply-list"
+        >
+          {suggestions.map((reply, index) => (
+            <button
+              className="group inline-flex min-h-11 max-w-[85%] items-center gap-2 rounded-lg border border-primary bg-background px-4 py-2 text-left text-sm leading-6 font-medium text-primary shadow-[0_1px_0_0_var(--accent)] transition-[color,background-color,transform,box-shadow] animate-in fade-in slide-in-from-bottom-2 zoom-in-95 fill-mode-both duration-300 hover:-translate-y-0.5 hover:bg-primary hover:text-primary-foreground active:translate-y-0 active:scale-95 active:shadow-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:animate-none motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:min-h-10"
+              key={reply.text}
+              onClick={() => onSuggestion?.(reply)}
+              style={{ animationDelay: `${150 + index * 70}ms` }}
+              type="button"
+            >
+              <span>{reply.text}</span>
+              {reply.send
+                ? <SendHorizontal aria-hidden="true" className="size-3.5 shrink-0 opacity-60 group-hover:opacity-100" />
+                : <span className="inline-flex shrink-0 items-center gap-1 text-xs font-normal opacity-70 group-hover:opacity-100">
+                    <PenLine aria-hidden="true" className="size-3.5" />이어서 입력
+                  </span>}
+            </button>
+          ))}
+        </div>
       </div>}
       {showComposer && <form className={`flex min-w-0 items-end gap-2 pt-3 ${offerSuggestions ? '' : 'border-t border-border'}`} onSubmit={onSubmit}>
         <div className="min-w-0 flex-1">

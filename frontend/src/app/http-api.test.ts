@@ -374,4 +374,16 @@ describe('HttpAppApi protected interviews', () => {
     const legacyPaths = ['/api/start', '/api/stream', '/api/sessions', '/api/review', '/api/csv']
     expect(fetcher.mock.calls.every(([url]) => legacyPaths.every((path) => !String(url).startsWith(path)))).toBe(true)
   })
+
+  it('tells the server when an answer was tapped from the suggested replies', async () => {
+    document.cookie = 'dabom_csrf=turn-token; Path=/'
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(participantInterview), { status: 200 }))
+    const api = new HttpAppApi(fetcher)
+
+    await api.sendMessage('interview-001', 'turn-1', '예', true)
+    await api.sendMessage('interview-001', 'turn-2', '직접 쓴 답')
+
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({ clientTurnId: 'turn-1', content: '예', suggested: true })
+    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({ clientTurnId: 'turn-2', content: '직접 쓴 답' })
+  })
 })

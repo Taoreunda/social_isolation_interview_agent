@@ -210,8 +210,8 @@ def test_participant_start_requires_auth_origin_csrf_and_correct_role(
     opening = [message["content"] for message in started.json()["messages"]]
     assert opening == [*WELCOME_MESSAGES, "첫 질문입니다."]
     assert started.json()["suggestedReplies"] == [
-        {"text": "예", "send": True},
-        {"text": "아니요", "send": True},
+        {"text": "예, 대부분 집이나 방에서 보냈어요", "send": True},
+        {"text": "아니요, 밖에서 보낸 시간이 더 많았어요", "send": True},
     ], "the open question arrives with the replies a participant can tap"
     assert "participantCode" not in started.json()
     assert "scorecard" not in started.json()
@@ -636,6 +636,67 @@ def test_the_review_payload_carries_the_answer_and_both_rationales(
 
     assert "answer" in exported.text.splitlines()[0]
     assert "하루 대부분 집에 있습니다" in exported.text
+
+
+def test_a_tapped_reply_is_recorded_as_tapped_all_the_way_to_the_export(
+    db_session: Session,
+    api_password_service: PasswordService,
+    api_fake_engine: ApiFakeEngine,
+) -> None:
+    """A reviewer has to be able to tell a canned sentence from the participant's own words."""
+    participant = create_account(
+        db_session,
+        api_password_service,
+        username="tap-participant",
+        role=Role.PARTICIPANT.value,
+        participant_code="P-TAP",
+    )
+    admin = create_account(
+        db_session,
+        api_password_service,
+        username="tap-admin",
+        role=Role.ADMIN.value,
+        participant_code=None,
+    )
+
+    with TestClient(api.app) as participant_client:
+        csrf = login(participant_client, participant)
+        started = participant_client.post("/api/interviews", headers=mutation_headers(csrf))
+        interview_id = started.json()["id"]
+        tapped_text = started.json()["suggestedReplies"][0]["text"]
+        tapped = participant_client.post(
+            f"/api/interviews/{interview_id}/messages",
+            headers=mutation_headers(csrf),
+            json={"clientTurnId": str(uuid4()), "content": tapped_text, "suggested": True},
+        )
+        claimed = participant_client.post(
+            f"/api/interviews/{interview_id}/messages",
+            headers=mutation_headers(csrf),
+            json={"clientTurnId": str(uuid4()), "content": "보기에 없는 말", "suggested": True},
+        )
+
+    assert all(message["source"] is None for message in started.json()["messages"])
+    answers = [message for message in claimed.json()["messages"] if message["role"] == "user"]
+    assert [(message["content"], message["source"]) for message in answers] == [
+        (tapped_text, "suggested"),
+        ("보기에 없는 말", "typed"),
+    ], "only a reply that was actually on offer counts as tapped"
+    assert tapped.status_code == 200
+
+    with TestClient(api.app) as admin_client:
+        admin_csrf = login(admin_client, admin)
+        detail = admin_client.get(f"/api/admin/interviews/{interview_id}").json()
+        exported = admin_client.post(
+            f"/api/admin/interviews/{interview_id}/csv",
+            headers=mutation_headers(admin_csrf),
+        )
+
+    a1 = next(row for row in detail["scorecard"] if row["questionId"] == "A1")
+    assert a1["answer"] == tapped_text
+    assert a1["answerSource"] == "suggested"
+    header = exported.text.splitlines()[0].split(",")
+    assert header[header.index("answer") + 1] == "answerSource"
+    assert "suggested" in exported.text
 
 
 def test_the_export_can_be_selected_by_participant(

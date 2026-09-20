@@ -30,7 +30,11 @@ def interview_with(statuses: dict[str, str], *, status: str = "active") -> Simpl
 
 
 def test_every_question_has_replies_that_split_its_cut_off() -> None:
-    assert texts("A1") == ["예", "아니요"]
+    # A yes/no question offers whole sentences, so a reply reads as something to say.
+    assert texts("A1") == [
+        "예, 대부분 집이나 방에서 보냈어요",
+        "아니요, 밖에서 보낸 시간이 더 많았어요",
+    ]
     # Two replies that meet at the cut-off: three or fewer is True, four or more is False.
     assert texts("A2") == ["주 3회 이하", "주 4회 이상"]
     assert texts("B1") == texts("C1") == ["0명", "1명", "2명", "3명 이상"]
@@ -47,9 +51,20 @@ def test_a_free_response_offers_no_and_a_yes_that_asks_for_more() -> None:
     replies = suggested_replies_for("E1")
 
     assert [(reply.text, reply.send) for reply in replies] == [
-        ("없습니다", True),
-        ("있습니다", False),
+        ("아니요, 받은 적 없어요", True),
+        ("네, 받은 적 있어요", False),
     ]
+    assert [(reply.text, reply.send) for reply in suggested_replies_for("E2")] == [
+        ("아니요, 없어요", True),
+        ("네, 있어요", False),
+    ]
+
+
+def test_sentence_replies_are_balanced_so_neither_reads_as_the_expected_answer() -> None:
+    for question_id in ("A1", "E1", "E2"):
+        first, second = (reply.text for reply in suggested_replies_for(question_id))
+        assert abs(len(first) - len(second)) <= 4, question_id
+        assert first.endswith("요") and second.endswith("요"), question_id
 
 
 def test_nothing_is_suggested_without_an_open_question() -> None:

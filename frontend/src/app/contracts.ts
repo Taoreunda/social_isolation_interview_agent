@@ -39,11 +39,15 @@ export interface ParticipantRecord {
   temporaryLockedUntil?: string | null
 }
 
+// How a participant gave an answer; absent for the interviewer and for older records.
+export type AnswerSource = 'typed' | 'suggested'
+
 export interface InterviewMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   createdAt: string
+  source?: AnswerSource | null
 }
 
 export type ScoreDecision = 'positive' | 'negative' | 'recorded'
@@ -52,6 +56,7 @@ export interface ScorecardRow {
   questionId: string
   question: string
   answer: string | null
+  answerSource?: AnswerSource | null
   value: string | null
   rationale: string | null
   aiStatus: ScoreDecision | null
@@ -113,7 +118,7 @@ export interface AppApi {
   changePassword(currentPassword: string, newPassword: string): Promise<void>
   getCurrentInterview(): Promise<ParticipantInterview>
   startInterview(): Promise<ParticipantInterview>
-  sendMessage(interviewId: string, clientTurnId: string, content: string): Promise<ParticipantInterview>
+  sendMessage(interviewId: string, clientTurnId: string, content: string, suggested?: boolean): Promise<ParticipantInterview>
   listParticipants(): Promise<ParticipantRecord[]>
   createParticipant(input: CreateParticipantInput): Promise<CreatedParticipant>
   resetParticipantPassword(participantId: string): Promise<PasswordResult>

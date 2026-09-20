@@ -122,6 +122,7 @@ export class MockAppApi implements AppApi {
     interviewId: string,
     clientTurnId: string,
     content: string,
+    suggested = false,
   ): Promise<ParticipantInterview> {
     const account = this.requireInterviewSubject()
     const interview = this.findInterview(interviewId)
@@ -139,6 +140,7 @@ export class MockAppApi implements AppApi {
         role: 'user',
         content,
         createdAt,
+        source: suggested ? 'suggested' : 'typed',
       },
       {
         id: `message-${(messageNumber + 1).toString().padStart(3, '0')}`,
