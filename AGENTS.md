@@ -4,7 +4,7 @@
 
 This repository is one authenticated research application: a React/Vite SPA, a FastAPI service, the existing two-node LangGraph interview engine, and PostgreSQL. The live frontend uses only the protected PostgreSQL API. Do not restore the removed unauthenticated interview endpoints, process-memory checkpoints, JSON persistence, or raw transcript logging.
 
-The product has two roles only: `participant` and `admin`. Do not add public signup, social login, a role switch, Streamlit, Gradio, another frontend runtime, or SQLite fallback. `presentation/` is user-owned and out of application scope unless the user explicitly includes it.
+The product has three roles: `participant` (sits the interview), `reviewer` (reviews scorecards, reads transcripts, exports CSV), and `admin` (everything a reviewer does, plus accounts, role grants, archiving, and the interview debug tools). Roles move only between `reviewer` and `admin`; a participant account keeps its role because its research code and interviews belong to it. Do not add public signup, social login, a role switch, Streamlit, Gradio, another frontend runtime, or SQLite fallback. `presentation/` is user-owned and out of application scope unless the user explicitly includes it.
 
 ## Source Map
 

@@ -146,3 +146,14 @@ def test_messages_record_how_an_answer_was_given(postgres_engine) -> None:
     assert columns["source"]["nullable"] is True, "interviewer messages have no source"
     checks = {check["name"] for check in inspector.get_check_constraints("interview_messages")}
     assert "ck_interview_messages_source" in checks
+
+
+def test_the_account_table_knows_three_roles_and_keeps_codes_to_participants(postgres_engine) -> None:
+    checks = {
+        check["name"]: check["sqltext"]
+        for check in inspect(postgres_engine).get_check_constraints("user_accounts")
+    }
+
+    assert "reviewer" in checks["ck_user_accounts_role"]
+    # A reviewer, like an administrator, has no participant code.
+    assert "reviewer" in checks["ck_user_accounts_participant_code_role"]

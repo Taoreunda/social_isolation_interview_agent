@@ -10,8 +10,9 @@ from auth.dependencies import (
     RequestIdentity,
     get_clock,
     get_db,
-    require_admin,
     require_admin_csrf,
+    require_reviewer,
+    require_reviewer_csrf,
     require_allowed_origin,
     require_interview_subject,
     require_interview_subject_csrf,
@@ -166,7 +167,7 @@ async def submit_interview_message(
     response_model=list[InterviewListItemResponse],
 )
 def list_interviews(
-    _identity: RequestIdentity = Depends(require_admin),
+    _identity: RequestIdentity = Depends(require_reviewer),
     service: InterviewService = Depends(get_interview_read_service),
 ) -> list[InterviewListItemResponse]:
     try:
@@ -185,7 +186,7 @@ def list_interviews(
 )
 def get_interview_detail(
     interview_id: UUID,
-    _identity: RequestIdentity = Depends(require_admin),
+    _identity: RequestIdentity = Depends(require_reviewer),
     service: InterviewService = Depends(get_interview_read_service),
 ) -> InterviewDetailResponse:
     try:
@@ -204,7 +205,7 @@ def review_scorecard(
     question_id: str,
     payload: ReviewScorecardRequest,
     _origin: None = Depends(require_allowed_origin),
-    identity: RequestIdentity = Depends(require_admin_csrf),
+    identity: RequestIdentity = Depends(require_reviewer_csrf),
     service: InterviewService = Depends(get_interview_read_service),
 ) -> InterviewDetailResponse:
     try:
@@ -245,7 +246,7 @@ def archive_interview(
 def export_interviews_csv(
     payload: ExportInterviewsRequest,
     _origin: None = Depends(require_allowed_origin),
-    identity: RequestIdentity = Depends(require_admin_csrf),
+    identity: RequestIdentity = Depends(require_reviewer_csrf),
     service: InterviewService = Depends(get_interview_read_service),
 ) -> Response:
     try:
@@ -269,7 +270,7 @@ def export_interviews_csv(
 def export_interview_csv(
     interview_id: UUID,
     _origin: None = Depends(require_allowed_origin),
-    identity: RequestIdentity = Depends(require_admin_csrf),
+    identity: RequestIdentity = Depends(require_reviewer_csrf),
     service: InterviewService = Depends(get_interview_read_service),
 ) -> Response:
     try:

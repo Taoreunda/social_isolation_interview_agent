@@ -21,7 +21,12 @@ _PARTICIPANT_CODE_PATTERN = re.compile(r"[A-Z0-9._-]{1,64}", re.ASCII)
 
 class Role(StrEnum):
     PARTICIPANT = "participant"
+    REVIEWER = "reviewer"
     ADMIN = "admin"
+
+
+# Reviewers and administrators: accounts that work on the study rather than take part in it.
+STAFF_ROLES = (Role.REVIEWER.value, Role.ADMIN.value)
 
 
 class AccountStatus(StrEnum):

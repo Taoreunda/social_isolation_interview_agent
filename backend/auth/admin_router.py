@@ -28,7 +28,7 @@ from auth.schemas import (
     ParticipantCredentialResponse,
     ParticipantResponse,
     PasswordAssignmentResponse,
-    ResetParticipantPasswordRequest,
+    ResetPasswordRequest,
 )
 from auth.security import generate_participant_password, generate_password
 from interview.service import InterviewService
@@ -149,7 +149,7 @@ def create_participant(
 )
 def reset_participant_password(
     participant_id: UUID,
-    payload: ResetParticipantPasswordRequest,
+    payload: ResetPasswordRequest,
     _origin: None = Depends(require_allowed_origin),
     identity: RequestIdentity = Depends(require_admin_csrf),
     service: AccountAdministrationService = Depends(get_account_administration_service),

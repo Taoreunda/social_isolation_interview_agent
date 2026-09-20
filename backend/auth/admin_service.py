@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 
 from auth.models import UserAccount
 from auth.policy import (
+    STAFF_ROLES,
     AccountStatus,
+    PolicyViolation,
     Role,
     normalize_participant_code,
     normalize_username,
@@ -145,19 +147,28 @@ class AccountAdministrationService:
             account = self.repository.get_account_for_update(participant_id)
             return account.participant_code if account else None
 
-    def reset_participant_password(
-        self,
-        *,
-        actor_user_id: UUID,
-        participant_id: UUID,
-        password: str,
+    # -- one account at a time ------------------------------------------------
+    # Participants and staff are managed the same way; `staff` picks which kind
+    # of account an id may refer to, so one endpoint can never reach the other's.
+
+    def _managed(self, account_id: UUID, *, staff: bool) -> UserAccount:
+        lookup = (
+            self.repository.get_staff_for_update
+            if staff
+            else self.repository.get_participant_for_update
+        )
+        account = lookup(account_id)
+        if account is None:
+            raise AccountNotFound
+        return account
+
+    def _reset_password(
+        self, *, actor_user_id: UUID, account_id: UUID, password: str, staff: bool
     ) -> UserAccount:
         password_hash = self.password_service.hash(password)
         now = self.clock()
         with self.session.begin():
-            account = self.repository.get_participant_for_update(participant_id)
-            if account is None:
-                raise AccountNotFound
+            account = self._managed(account_id, staff=staff)
             account.password_hash = password_hash
             account.password_changed_at = now
             account.updated_at = now
@@ -171,17 +182,13 @@ class AccountAdministrationService:
             )
         return account
 
-    def disable_participant(
-        self,
-        *,
-        actor_user_id: UUID,
-        participant_id: UUID,
-    ) -> UserAccount:
+    def _disable(self, *, actor_user_id: UUID, account_id: UUID, staff: bool) -> UserAccount:
         now = self.clock()
         with self.session.begin():
-            account = self.repository.get_participant_for_update(participant_id)
-            if account is None:
-                raise AccountNotFound
+            account = self._managed(account_id, staff=staff)
+            # An administrator who disables their own account locks the study out.
+            if account.id == actor_user_id:
+                raise AccountStateConflict
             if account.status == AccountStatus.DISABLED.value:
                 raise AccountStateConflict
             account.status = AccountStatus.DISABLED.value
@@ -196,18 +203,10 @@ class AccountAdministrationService:
             )
         return account
 
-    def enable_participant(
-        self,
-        *,
-        actor_user_id: UUID,
-        participant_id: UUID,
-    ) -> UserAccount:
-        """Bring a disabled participant back into the study."""
+    def _enable(self, *, actor_user_id: UUID, account_id: UUID, staff: bool) -> UserAccount:
         now = self.clock()
         with self.session.begin():
-            account = self.repository.get_participant_for_update(participant_id)
-            if account is None:
-                raise AccountNotFound
+            account = self._managed(account_id, staff=staff)
             if account.status != AccountStatus.DISABLED.value:
                 raise AccountStateConflict
             account.status = AccountStatus.ACTIVE.value
@@ -225,17 +224,10 @@ class AccountAdministrationService:
             )
             return account
 
-    def unlock_participant(
-        self,
-        *,
-        actor_user_id: UUID,
-        participant_id: UUID,
-    ) -> UserAccount:
+    def _unlock(self, *, actor_user_id: UUID, account_id: UUID, staff: bool) -> UserAccount:
         now = self.clock()
         with self.session.begin():
-            account = self.repository.get_participant_for_update(participant_id)
-            if account is None:
-                raise AccountNotFound
+            account = self._managed(account_id, staff=staff)
             if account.status != AccountStatus.ADMIN_LOCKED.value:
                 raise AccountStateConflict
             account.status = AccountStatus.ACTIVE.value
@@ -255,3 +247,107 @@ class AccountAdministrationService:
                 occurred_at=now,
             )
         return account
+
+    # -- participants ---------------------------------------------------------
+
+    def reset_participant_password(
+        self, *, actor_user_id: UUID, participant_id: UUID, password: str
+    ) -> UserAccount:
+        return self._reset_password(
+            actor_user_id=actor_user_id, account_id=participant_id, password=password, staff=False
+        )
+
+    def disable_participant(self, *, actor_user_id: UUID, participant_id: UUID) -> UserAccount:
+        return self._disable(actor_user_id=actor_user_id, account_id=participant_id, staff=False)
+
+    def enable_participant(self, *, actor_user_id: UUID, participant_id: UUID) -> UserAccount:
+        """Bring a disabled participant back into the study."""
+        return self._enable(actor_user_id=actor_user_id, account_id=participant_id, staff=False)
+
+    def unlock_participant(self, *, actor_user_id: UUID, participant_id: UUID) -> UserAccount:
+        return self._unlock(actor_user_id=actor_user_id, account_id=participant_id, staff=False)
+
+    # -- staff: reviewers and administrators -------------------------------------
+
+    def list_staff(self) -> list[UserAccount]:
+        with self.session.begin():
+            return self.repository.list_staff()
+
+    def create_staff(
+        self, *, actor_user_id: UUID, username: str, role: str, password: str
+    ) -> UserAccount:
+        if role not in STAFF_ROLES:
+            raise PolicyViolation("역할은 검토자 또는 관리자여야 합니다.")
+        normalized_username = normalize_username(username)
+        password_hash = self.password_service.hash(password)
+        now = self.clock()
+        try:
+            with self.session.begin():
+                account = self.repository.add_account(
+                    UserAccount(
+                        normalized_username=normalized_username,
+                        display_username=username.strip(),
+                        password_hash=password_hash,
+                        role=role,
+                        status=AccountStatus.ACTIVE.value,
+                        participant_code=None,
+                        created_by_user_id=actor_user_id,
+                        created_at=now,
+                        updated_at=now,
+                        password_changed_at=now,
+                    )
+                )
+                self.repository.add_audit_event(
+                    actor_user_id=actor_user_id,
+                    action="account.created",
+                    target_type="user_account",
+                    target_id=account.id,
+                    occurred_at=now,
+                    details={"role": role},
+                )
+        except IntegrityError as exc:
+            raise AccountConflict from exc
+        return account
+
+    def change_staff_role(self, *, actor_user_id: UUID, staff_id: UUID, role: str) -> UserAccount:
+        """Move an account between reviewer and administrator.
+
+        A participant account is out of reach here: it owns a research code and
+        the interviews recorded under it. An administrator cannot change their
+        own role, which also means the study always keeps one administrator.
+        The account is signed out so the new role takes hold at once.
+        """
+        if role not in STAFF_ROLES:
+            raise PolicyViolation("역할은 검토자 또는 관리자여야 합니다.")
+        now = self.clock()
+        with self.session.begin():
+            account = self._managed(staff_id, staff=True)
+            if account.id == actor_user_id or account.role == role:
+                raise AccountStateConflict
+            previous = account.role
+            account.role = role
+            account.updated_at = now
+            self.repository.revoke_all_sessions(account.id, now)
+            self.repository.add_audit_event(
+                actor_user_id=actor_user_id,
+                action="account.role_changed",
+                target_type="user_account",
+                target_id=account.id,
+                occurred_at=now,
+                details={"from": previous, "to": role},
+            )
+        return account
+
+    def reset_staff_password(self, *, actor_user_id: UUID, staff_id: UUID, password: str) -> UserAccount:
+        return self._reset_password(
+            actor_user_id=actor_user_id, account_id=staff_id, password=password, staff=True
+        )
+
+    def disable_staff(self, *, actor_user_id: UUID, staff_id: UUID) -> UserAccount:
+        return self._disable(actor_user_id=actor_user_id, account_id=staff_id, staff=True)
+
+    def enable_staff(self, *, actor_user_id: UUID, staff_id: UUID) -> UserAccount:
+        return self._enable(actor_user_id=actor_user_id, account_id=staff_id, staff=True)
+
+    def unlock_staff(self, *, actor_user_id: UUID, staff_id: UUID) -> UserAccount:
+        return self._unlock(actor_user_id=actor_user_id, account_id=staff_id, staff=True)

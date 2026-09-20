@@ -13,6 +13,7 @@ if str(BACKEND_DIR) not in sys.path:
 from app_core.config import bootstrap  # noqa: E402
 from app_core.database import check_database  # noqa: E402
 from auth.admin_router import router as admin_router  # noqa: E402
+from auth.staff_router import router as staff_router  # noqa: E402
 from auth.dependencies import get_allowed_origins  # noqa: E402
 from auth.router import router as auth_router  # noqa: E402
 from fastapi import FastAPI, HTTPException, status  # noqa: E402
@@ -31,6 +32,7 @@ app.add_middleware(
 )
 app.include_router(auth_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
+app.include_router(staff_router, prefix="/api")
 app.include_router(interview_router, prefix="/api")
 
 

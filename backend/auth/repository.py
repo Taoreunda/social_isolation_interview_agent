@@ -11,6 +11,7 @@ from sqlalchemy import delete, or_, select, text, update
 from sqlalchemy.orm import Session, joinedload
 
 from auth.models import AuditEvent, AuthSession, UserAccount
+from auth.policy import STAFF_ROLES
 
 
 RESEARCH_CODE_PREFIX = "KU"
@@ -46,6 +47,25 @@ class AuthRepository:
                 UserAccount.role == "participant",
             )
             .with_for_update()
+        )
+
+    def get_staff_for_update(self, user_id: UUID) -> UserAccount | None:
+        return self.session.scalar(
+            select(UserAccount)
+            .where(
+                UserAccount.id == user_id,
+                UserAccount.role.in_(STAFF_ROLES),
+            )
+            .with_for_update()
+        )
+
+    def list_staff(self) -> list[UserAccount]:
+        return list(
+            self.session.scalars(
+                select(UserAccount)
+                .where(UserAccount.role.in_(STAFF_ROLES))
+                .order_by(UserAccount.normalized_username, UserAccount.id)
+            )
         )
 
     def add_account(self, account: UserAccount) -> UserAccount:

@@ -21,11 +21,18 @@ Browser
 - 본인의 현재 인터뷰 시작·재개와 공개 대화 조회
 - 다른 참여자, 참여자 코드, 점수표, 진단, AI 근거, 전문가 검토와 CSV에는 접근 불가
 
+### 검토자
+
+- 인터뷰 목록·상세, 대화 기록, 점수표 동의/변경과 CSV export
+- 계정 관리, 인터뷰 보관, 인터뷰 진행은 불가
+- 실명 대신 `participant_code` 사용
+
 ### 관리자
 
+- 검토자가 하는 모든 일
 - 가명 참여자 계정 생성, 비밀번호 재설정, 비활성화, 관리자 잠금 해제
-- 인터뷰 목록·상세, 점수표 동의/변경과 CSV export
-- 실명 대신 `participant_code` 사용
+- 검토자·관리자 계정 생성과 역할 부여(`/api/admin/staff`). 역할은 검토자 ↔ 관리자 사이에서만 바뀌고, 참여자 계정은 역할을 바꿀 수 없다. 자기 자신의 역할 변경과 비활성화는 막혀 있어 관리자가 항상 한 명 이상 남는다. 역할이 바뀐 계정은 즉시 로그아웃된다.
+- 인터뷰 중단·보관, 테스트용 인터뷰 진행과 디버깅 모드
 
 FastAPI가 각 요청에서 세션, 역할과 resource 소유권을 검사합니다. 참여자가 소유하지 않은 인터뷰는 `404`로 처리합니다. 상태 변경은 허용 origin과 double-submit CSRF cookie/header까지 검증합니다.
 
@@ -88,6 +95,11 @@ UUID와 UTC timezone-aware timestamp를 사용합니다. partial unique index가
 - `POST /api/admin/interviews/{interview_id}/archive`
 - `POST /api/admin/interviews/csv` (전체 또는 선택한 인터뷰)
 - `POST /api/admin/interviews/{interview_id}/csv`
+
+위 목록에서 `archive`만 관리자 전용이고 나머지는 검토자도 호출할 수 있습니다. 계정 API는 관리자 전용입니다.
+
+- `GET|POST /api/admin/participants`, `POST /api/admin/participants/{id}/password|disable|enable|unlock`
+- `GET|POST /api/admin/staff`, `POST /api/admin/staff/{id}/role|password|disable|enable|unlock`
 
 관리자 상세 응답은 진단, 기준 충족 여부, 요약, 알고리즘 버전과 완료 시각을 포함합니다. 참여자 응답에는 포함하지 않습니다. CSV는 이 값들을 문항 행마다 함께 담습니다.
 

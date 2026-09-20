@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from auth.admin_service import AccountAdministrationService
-from auth.policy import Role, SessionKind
+from auth.policy import Role, STAFF_ROLES, SessionKind
 from auth.security import TokenService
 from auth.service import (
     AuthContext,
@@ -256,6 +256,29 @@ def require_admin_csrf(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="관리자 권한이 필요합니다.",
+        )
+    return identity
+
+
+def require_reviewer(
+    identity: RequestIdentity = Depends(require_current_user),
+) -> RequestIdentity:
+    """Allow a reviewer, or an administrator, who may do everything a reviewer does."""
+    if identity.context.account.role not in STAFF_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="검토 권한이 필요합니다.",
+        )
+    return identity
+
+
+def require_reviewer_csrf(
+    identity: RequestIdentity = Depends(require_csrf),
+) -> RequestIdentity:
+    if identity.context.account.role not in STAFF_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="검토 권한이 필요합니다.",
         )
     return identity
 

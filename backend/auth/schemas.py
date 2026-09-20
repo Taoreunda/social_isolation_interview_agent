@@ -71,12 +71,12 @@ class ParticipantCredentialResponse(ApiSchema):
     assigned_password: str | None
 
 
-class ResetParticipantPasswordRequest(ApiSchema):
+class ResetPasswordRequest(ApiSchema):
     password: str | None = None
     generate_password: bool = False
 
     @model_validator(mode="after")
-    def require_one_password_source(self) -> ResetParticipantPasswordRequest:
+    def require_one_password_source(self) -> ResetPasswordRequest:
         if self.generate_password == (self.password is not None):
             raise ValueError("Provide a password or request generation")
         return self
@@ -84,3 +84,38 @@ class ResetParticipantPasswordRequest(ApiSchema):
 
 class PasswordAssignmentResponse(ApiSchema):
     assigned_password: str | None
+
+
+# Reviewers and administrators. A participant is never created or re-roled here:
+# a participant account owns a research code and the interviews recorded under it.
+StaffRole = Literal["reviewer", "admin"]
+
+
+class StaffResponse(ApiSchema):
+    id: UUID
+    username: str
+    role: StaffRole
+    status: AccountStatus
+    temporary_locked_until: datetime | None = None
+
+
+class CreateStaffRequest(ApiSchema):
+    username: str
+    role: StaffRole
+    password: str | None = None
+    generate_password: bool = False
+
+    @model_validator(mode="after")
+    def require_one_password_source(self) -> CreateStaffRequest:
+        if self.generate_password == (self.password is not None):
+            raise ValueError("Provide a password or request generation")
+        return self
+
+
+class StaffCredentialResponse(ApiSchema):
+    staff: StaffResponse
+    assigned_password: str | None
+
+
+class ChangeStaffRoleRequest(ApiSchema):
+    role: StaffRole

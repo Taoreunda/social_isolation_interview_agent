@@ -29,7 +29,7 @@ class UserAccount(Base):
     __tablename__ = "user_accounts"
     __table_args__ = (
         CheckConstraint(
-            "role IN ('participant', 'admin')",
+            "role IN ('participant', 'reviewer', 'admin')",
             name="ck_user_accounts_role",
         ),
         CheckConstraint(
@@ -38,7 +38,7 @@ class UserAccount(Base):
         ),
         CheckConstraint(
             "((role = 'participant' AND participant_code IS NOT NULL) "
-            "OR (role = 'admin' AND participant_code IS NULL))",
+            "OR (role IN ('reviewer', 'admin') AND participant_code IS NULL))",
             name="ck_user_accounts_participant_code_role",
         ),
         CheckConstraint(
