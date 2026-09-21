@@ -1,0 +1,20 @@
+# The images are built from the repository root; keep secrets, local data and
+# everything the server does not run out of the build context.
+.git
+.env
+**/.env
+.venv
+**/node_modules
+frontend/dist
+**/__pycache__
+.pytest_cache
+.run
+logs
+data
+backups
+references
+presentation
+docs
+tests
+*.pdf
+*.log

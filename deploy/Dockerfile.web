@@ -1,0 +1,15 @@
+# The built React application, served by Caddy, which also forwards /api to FastAPI.
+FROM node:24-slim AS build
+
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend ./
+ENV VITE_APP_MODE=live
+RUN npm run build
+
+FROM caddy:2-alpine
+
+COPY deploy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /src/frontend/dist /srv

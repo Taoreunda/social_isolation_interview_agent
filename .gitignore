@@ -36,5 +36,9 @@ data/results/*.json
 data/
 references/
 
+# Deployment: this machine's target and database dumps pulled from the server
+deploy/target.env
+backups/
+
 # User-owned presentation material (out of application scope)
 presentation/

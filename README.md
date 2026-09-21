@@ -93,6 +93,8 @@ docker compose --profile test stop db-test
 
 초기 연구 규모는 약 200–300명이며 작은 단일 EC2 애플리케이션과 private Single-AZ RDS for PostgreSQL 구성을 전제로 합니다. RDS 암호화·backup·삭제 방지, private subnet, 최소 권한 security group, Secrets Manager/Parameter Store, HTTPS와 `Secure` cookie를 사용합니다.
 
+테스트 단계의 서버 구성은 `deploy/`에 있습니다. EC2 한 대에서 Caddy·FastAPI·PostgreSQL을 Docker Compose로 띄우고, 로컬에서 `./deploy/deploy.sh` 한 줄로 GitHub `main`을 배포합니다. 처음 세팅부터 HTTPS·RDS 전환까지의 순서는 [deploy/README.md](deploy/README.md)를 따르세요.
+
 현재 겹치는 interview turn은 단일 FastAPI 프로세스의 application lock으로 거부합니다. 여러 API worker로 확장하기 전에는 PostgreSQL 또는 분산 turn lock으로 교체해야 합니다. 응답은 turn 완료 후 JSON으로 반환하며 token streaming은 현재 범위가 아닙니다.
 
 구조와 보안 경계는 [docs/architecture.md](docs/architecture.md), 제품/UI 원칙은 [PRODUCT.md](PRODUCT.md), 개발 규칙은 [AGENTS.md](AGENTS.md)를 참조하세요.

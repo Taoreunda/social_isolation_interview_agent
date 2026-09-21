@@ -1,0 +1,29 @@
+# SITE_ADDRESS=:80 serves plain HTTP on the instance's address (first smoke test).
+# SITE_ADDRESS=interview.example.org makes Caddy obtain and renew HTTPS by itself.
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy same-origin
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+
+		# Hashed build files never change; the page that names them always revalidates.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@pages not path /assets/*
+		header @pages Cache-Control "no-cache"
+
+		try_files {path} /index.html
+		file_server
+	}
+}
