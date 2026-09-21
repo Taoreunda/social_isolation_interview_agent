@@ -37,7 +37,7 @@ uv sync
 ./dev.sh stop
 ```
 
-`run_web_app.sh`는 DB를 준비하지 않는 하위 수준 foreground runner입니다.
+로컬 실행은 `dev.sh` 하나로 합니다. DB 준비, migration, 포트 선택, API와 Vite 실행, 중지까지 모두 이 스크립트가 맡습니다.
 
 ## 환경변수
 
@@ -81,9 +81,9 @@ docker compose --profile test up -d db-test
 uv run pytest -q
 uv run python tests/test_flow_scenarios.py
 (cd frontend && npm test && npm run check:palette && npm run build)
-bash tests/test_run_web_app.sh
 bash tests/test_vite_proxy.sh
 bash tests/test_dev_script.sh
+bash tests/test_deploy_script.sh
 docker compose --profile test stop db-test
 ```
 

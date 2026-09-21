@@ -47,9 +47,9 @@ docker compose --profile test up -d db-test
 uv run pytest -q
 uv run python tests/test_flow_scenarios.py
 (cd frontend && npm test && npm run check:palette && npm run build)
-bash tests/test_run_web_app.sh
 bash tests/test_vite_proxy.sh
 bash tests/test_dev_script.sh
+bash tests/test_deploy_script.sh
 ```
 
 Tests must not require an API key or public network. Add migration tests for schema changes, real PostgreSQL service/API tests for persistence and authorization, and observable-state frontend tests for UI changes.

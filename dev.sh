@@ -9,7 +9,7 @@ WEB_PORT_FILE="$RUNTIME_DIR/web.port"
 RUNNER_LOG="$ROOT_DIR/logs/dev.log"
 API_LOG="$ROOT_DIR/logs/api.log"
 FRONTEND_LOG="$ROOT_DIR/logs/frontend.log"
-RUN_WEB_APP="$ROOT_DIR/run_web_app.sh"
+SELF="$ROOT_DIR/dev.sh"
 DEV_DATABASE_URL="postgresql+psycopg://dabom:dabom-local@127.0.0.1:54329/dabom"
 
 cd "$ROOT_DIR"
@@ -63,7 +63,7 @@ managed_app_is_running() {
   esac
   kill -0 "$pid" 2>/dev/null || return 1
   command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-  [[ "$command_line" == *"$RUN_WEB_APP"* ]]
+  [[ "$command_line" == *"$SELF __serve"* ]]
 }
 
 port_is_in_use() {
@@ -135,15 +135,15 @@ launch_app() {
     AUTH_COOKIE_SECURE=false \
     API_PORT="$api_port" \
     WEB_PORT="$web_port" \
-    uv run python - "$RUN_WEB_APP" "$RUNNER_LOG" <<'PY'
+    uv run python - "$SELF" "$RUNNER_LOG" <<'PY'
 import os
 import subprocess
 import sys
 
-runner_path, log_path = sys.argv[1:3]
+script_path, log_path = sys.argv[1:3]
 with open(log_path, "ab", buffering=0) as runner_log:
     process = subprocess.Popen(
-        [runner_path],
+        ["bash", script_path, "__serve"],
         stdin=subprocess.DEVNULL,
         stdout=runner_log,
         stderr=subprocess.STDOUT,
@@ -153,6 +153,43 @@ with open(log_path, "ab", buffering=0) as runner_log:
     )
 print(process.pid)
 PY
+}
+
+# The long-running part that launch_app starts in its own process group: the API
+# and the Vite dev server, until either is stopped. Internal; use ./dev.sh start.
+serve_app() {
+  local api_port="${API_PORT:-}" web_port="${WEB_PORT:-}" allowed_origins api_pid web_pid
+  if [ -z "${DATABASE_URL:-}" ] || [ -z "$api_port" ] || [ -z "$web_port" ]; then
+    echo "This is the internal half of ./dev.sh start, which prepares the database and ports." >&2
+    return 2
+  fi
+
+  allowed_origins="http://127.0.0.1:$web_port,http://localhost:$web_port"
+  if [ -n "${AUTH_ALLOWED_ORIGINS:-}" ]; then
+    allowed_origins="$allowed_origins,$AUTH_ALLOWED_ORIGINS"
+  fi
+
+  echo "Starting FastAPI backend on http://127.0.0.1:$api_port"
+  # Ignore SIGHUP so a detached stack outlives the shell that launched it.
+  AUTH_ALLOWED_ORIGINS="$allowed_origins" \
+    nohup uv run python -m uvicorn api:app --app-dir backend --reload --host 127.0.0.1 --port "$api_port" >"$API_LOG" 2>&1 &
+  api_pid=$!
+
+  if [ ! -d "$ROOT_DIR/frontend/node_modules" ]; then
+    echo "Installing frontend dependencies..."
+    (cd "$ROOT_DIR/frontend" && npm install)
+  fi
+
+  echo "Starting React frontend on http://127.0.0.1:$web_port/"
+  nohup sh -c '
+    cd "$1/frontend"
+    VITE_API_PORT="$2" npm run dev -- --host 127.0.0.1 --port "$3" --strictPort
+  ' _ "$ROOT_DIR" "$api_port" "$web_port" >"$FRONTEND_LOG" 2>&1 &
+  web_pid=$!
+
+  # shellcheck disable=SC2064
+  trap "kill $web_pid $api_pid 2>/dev/null || true" INT TERM EXIT
+  wait "$web_pid"
 }
 
 stop_app_only() {
@@ -208,6 +245,7 @@ start_stack() {
   remove_runtime_files
   require_command curl
   require_command lsof
+  require_command npm
   prepare_database
   mkdir -p "$RUNTIME_DIR" "$ROOT_DIR/logs"
   : >"$RUNNER_LOG"
@@ -307,6 +345,7 @@ case "$command" in
   logs) show_logs "${2:-all}" ;;
   debug) follow_logs ;;
   admin) create_admin "${2:-admin}" ;;
+  __serve) serve_app ;;
   help | -h | --help) usage ;;
   *)
     usage >&2
