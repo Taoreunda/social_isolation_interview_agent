@@ -26,6 +26,9 @@ Usage: ./dev.sh <command>
                          Print the latest logs (default: all)
   debug                  Follow API and frontend logs
   admin [username]       Create the first administrator (default: admin)
+
+Without a terminal, set BOOTSTRAP_ADMIN_USERNAME and BOOTSTRAP_ADMIN_PASSWORD in
+.env instead: they are read at startup only while no administrator exists.
 EOF
 }
 

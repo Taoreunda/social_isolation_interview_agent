@@ -53,7 +53,7 @@ class AccountAdministrationService:
         self.password_service = password_service or PasswordService()
         self.clock = clock
 
-    def bootstrap_admin(self, *, username: str, password: str) -> UserAccount:
+    def bootstrap_admin(self, *, username: str, password: str, source: str = "bootstrap") -> UserAccount:
         normalized_username = normalize_username(username)
         password_hash = self.password_service.hash(password)
         now = self.clock()
@@ -82,7 +82,7 @@ class AccountAdministrationService:
                     target_type="user_account",
                     target_id=account.id,
                     occurred_at=now,
-                    details={"role": Role.ADMIN.value, "source": "bootstrap"},
+                    details={"role": Role.ADMIN.value, "source": source},
                 )
         except IntegrityError as exc:
             raise AccountConflict from exc

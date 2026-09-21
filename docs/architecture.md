@@ -34,6 +34,8 @@ Browser
 - 검토자·관리자 계정 생성과 역할 부여(`/api/admin/staff`). 역할은 검토자 ↔ 관리자 사이에서만 바뀌고, 참여자 계정은 역할을 바꿀 수 없다. 자기 자신의 역할 변경과 비활성화는 막혀 있어 관리자가 항상 한 명 이상 남는다. 역할이 바뀐 계정은 즉시 로그아웃된다.
 - 인터뷰 중단·보관, 테스트용 인터뷰 진행과 디버깅 모드
 
+첫 관리자만 화면 밖에서 만든다. `./dev.sh admin [username]`으로 터미널에서 만들거나, `BOOTSTRAP_ADMIN_USERNAME`·`BOOTSTRAP_ADMIN_PASSWORD`를 환경 변수로 주고 서버를 시작한다(`auth/env_bootstrap.py`, API lifespan에서 실행). 환경 변수는 관리자가 0명일 때만 읽고 이후에는 무시하며, 값이 남아 있으면 시작할 때마다 지우라는 경고를 남긴다. 비밀번호 정책을 통과하지 못하거나 DB에 닿지 못해도 서버 시작은 막지 않는다. 감사 기록에는 `source: "environment"`(CLI는 `"bootstrap"`)가 남는다. 그 밖의 모든 계정은 관리자가 화면에서 만든다.
+
 FastAPI가 각 요청에서 세션, 역할과 resource 소유권을 검사합니다. 참여자가 소유하지 않은 인터뷰는 `404`로 처리합니다. 상태 변경은 허용 origin과 double-submit CSRF cookie/header까지 검증합니다.
 
 ## 인증과 세션

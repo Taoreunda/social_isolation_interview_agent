@@ -10,11 +10,15 @@ BACKEND_DIR = Path(__file__).resolve().parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from collections.abc import AsyncIterator  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+
 from app_core.config import bootstrap  # noqa: E402
 from app_core.database import check_database  # noqa: E402
 from auth.admin_router import router as admin_router  # noqa: E402
 from auth.staff_router import router as staff_router  # noqa: E402
 from auth.dependencies import get_allowed_origins  # noqa: E402
+from auth.env_bootstrap import bootstrap_admin_from_env  # noqa: E402
 from auth.router import router as auth_router  # noqa: E402
 from fastapi import FastAPI, HTTPException, status  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
@@ -22,7 +26,15 @@ from interview.router import router as interview_router  # noqa: E402
 
 bootstrap()
 
-app = FastAPI(title="Dabom Research Interview API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # A fresh deployment may name its first administrator in the environment.
+    bootstrap_admin_from_env()
+    yield
+
+
+app = FastAPI(title="Dabom Research Interview API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
